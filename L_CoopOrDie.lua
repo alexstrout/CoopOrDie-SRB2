@@ -709,6 +709,80 @@ addHook("MapChange", function(mapnum)
 	teamlives = max($ - pcount, 1)
 end)
 
+--Handle damage for mobjs (now with more merp)
+addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
+	if (target.flags & (MF_BOSS | MF_ENEMY))
+	and source and source.valid and source.player
+		if not target.cd_lastattacker
+			target.cd_lastattacker = source
+
+			--Handle colorization
+			target.colorized = true
+			if source.player == consoleplayer
+				if splitscreen
+					target.color = SKINCOLOR_BLUEBELL
+				else
+					target.color = SKINCOLOR_GREY
+				end
+			elseif source.player == secondarydisplayplayer
+				target.color = SKINCOLOR_PINK
+			else
+				target.color = SKINCOLOR_YELLOW
+			end
+
+			--Boop!
+			S_StartSound(target, sfx_dmpain)
+			target.flags2 = $ | MF2_FRET
+			target.cd_frettime = TICRATE / 4
+			return true
+		elseif target.cd_lastattacker == source
+			if not target.cd_frettime
+				S_StartSound(target, sfx_s3k7b)
+				target.cd_frettime = TICRATE / 2
+				if not target.cd_merpcount
+					target.cd_merpcount = 3
+				else
+					target.cd_merpcount = $ - 1
+					if target.cd_merpcount < 2
+						target.flags2 = $ | MF2_FRET
+					end
+					if target.cd_merpcount <= 0
+						S_StartSound(source, sfx_shldls)
+						P_DoPlayerPain(source.player, target, inflictor)
+						target.cd_merpcount = nil
+					end
+				end
+			end
+			return true
+		else
+			--Decolorize for proper explosion fx
+			target.colorized = false
+			target.color = SKINCOLOR_NONE
+		end
+	end
+end)
+
+--Handle mobj tic logic
+addHook("MobjThinker", function(mobj)
+	if mobj.cd_lastattacker
+		--Fix grey enemies for mid-game joiners
+		if mobj.color == SKINCOLOR_GREY
+		and mobj.cd_lastattacker.valid
+		and mobj.cd_lastattacker.player != consoleplayer
+			mobj.color = SKINCOLOR_YELLOW
+		end
+
+		--Decrement frettime
+		if mobj.cd_frettime
+			mobj.cd_frettime = $ - 1
+			if mobj.cd_frettime <= 0
+				mobj.flags2 = $ & ~MF2_FRET
+				mobj.cd_frettime = nil
+			end
+		end
+	end
+end)
+
 --Handle (re)spawning for bots
 addHook("PlayerSpawn", function(player)
 	if player.cdinfo
