@@ -858,6 +858,33 @@ addHook("MobjThinker", function(mobj)
 	end
 end)
 
+--Handle special stage spheres
+addHook("TouchSpecial", function(special, toucher)
+	if not special.cd_lastattacker
+		special.cd_lastattacker = toucher
+		special.colorized = true
+		if toucher.player
+			if toucher.player == consoleplayer
+				if splitscreen
+					special.color = SKINCOLOR_GREEN
+				else
+					special.color = SKINCOLOR_GREY
+				end
+			elseif toucher.player == secondarydisplayplayer
+				special.color = SKINCOLOR_PINK
+			else
+				special.color = SKINCOLOR_YELLOW
+			end
+		else
+			special.color = SKINCOLOR_AZURE
+		end
+		S_StartSound(toucher, sfx_s3k65)
+		return true
+	elseif special.cd_lastattacker == toucher
+		return true
+	end
+end, MT_BLUESPHERE)
+
 --Handle (re)spawning for bots
 addHook("PlayerSpawn", function(player)
 	if player.cdinfo
