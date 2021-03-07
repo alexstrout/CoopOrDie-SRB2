@@ -42,12 +42,6 @@ local CV_CDEnemyClearPct = CV_RegisterVar({
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = {MIN = 20, MAX = 80}
 })
-local CV_CDEnemyHitPts = CV_RegisterVar({
-	name = "cd_enemyhitpts",
-	defaultvalue = "2",
-	flags = CV_NETVAR|CV_SHOWMODIF,
-	PossibleValue = {MIN = 1, MAX = 3}
-})
 local CV_CDTeleMode = CV_RegisterVar({
 	name = "cd_telemode",
 	defaultvalue = "0",
@@ -206,21 +200,6 @@ local function GetTopLeader(bot, basebot)
 	return bot
 end
 
---Get our "bottom" follower in a leader chain (if applicable)
---e.g. for A <- B <- D <- C, A's "bottom" follower is C
-local function GetBottomFollower(bot, basebot)
-	if bot != basebot and bot.cd_followers
-		for k, b in pairs(bot.cd_followers)
-			--Pick a random node if the tree splits
-			if P_RandomByte() < 128
-			or table.maxn(bot.cd_followers) == k
-				return GetBottomFollower(b, basebot)
-			end
-		end
-	end
-	return bot
-end
-
 --List all bots, optionally excluding bots led by leader
 local function SubListBots(player, leader, bot, level)
 	if bot == leader
@@ -356,8 +335,9 @@ end, COM_LOCAL)
 
 --[[
 	--------------------------------------------------------------------------------
-	AI LOGIC
-	Actual AI behavior etc.
+	LEADER LOGIC
+	Actual leader-related behavior etc.
+	This is exactly like foxBot's stuff
 	--------------------------------------------------------------------------------
 ]]
 --Teleport a bot to leader, optionally fading out
@@ -452,20 +432,33 @@ local function Teleport(bot, fadeout)
 	return true
 end
 
---Drive bot based on whatever unholy mess is in this function
---This is the "WhatToDoNext" entry point for all AI actions
+--[[
+	--------------------------------------------------------------------------------
+	COOP OR DIE LOGIC
+	Now we're getting into actual CD-specific stuff
+	PreThinkFrameFor is very similar to foxBot's, but we alter a few things:
+		All players have "cdinfo" structs, not just players following leaders
+		Lives are synced game-wide via teamlives
+		Added some logic to deny exiting if targetenemyct isn't met
+		Altered leader logic (mostly to sync w/ foxBot)
+		Additional range check added to bai.playernosight
+
+	--------------------------------------------------------------------------------
+]]
+--Drive players based on whatever unholy mess is in this function
+--Note that "bot" and "bai" are misnomers, but renames weren't necessary
 local function PreThinkFrameFor(bot)
 	if not bot.valid
 		return
 	end
 
-	--Make sure we have a proper CoopOrDie info
+	--CD: Make sure we have a proper CoopOrDie info
 	if not bot.cdinfo
 		SetupAI(bot)
 	end
 	local bai = bot.cdinfo
 
-	--Handle lives here
+	--CD: Handle lives here
 	if bot.lives != bai.lastlives
 		teamlives = bot.lives
 	elseif leveltime and bot.jointime
@@ -480,24 +473,24 @@ local function PreThinkFrameFor(bot)
 	bot.lives = teamlives
 	bai.lastlives = teamlives
 
-	--Handle exiting here
+	--CD: Handle exiting here
 	if (bot.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
 		P_DamageMobj(bot.mo, nil, nil, 420, DMG_INSTAKILL)
 		bot.pflags = $ & ~PF_FINISHED
 	end
 
-	--Derp
+	--CD: Derp
 	local leader = nil
 
-	--Just use same leader as foxBot if we're a bot
+	--CD: Just use same leader as foxBot if we're a bot
 	if bot.ai
 		bai.leader = bot.ai.leader
 		bai.realleader = bot.ai.realleader
 
-		--Derp
+		--CD: Derp
 		leader = bai.leader
-	--Otherwise...
+	--CD: Otherwise...
 	else
 		--Bail here if no (real) leader
 		--(unlike foxBot's ai struct, we may validly have a cdinfo w/ no realleader)
@@ -513,29 +506,12 @@ local function PreThinkFrameFor(bot)
 				bai.leader = bai.realleader
 				return
 			end
-			--Otherwise find a new leader
-			local bestleader = -1
-			for player in players.iterate
-				if GetTopLeader(player, bot) != bot --Also infers player != bot as base case
-				--Prefer higher-numbered players to spread out bots more
-				and (bestleader < 0 or P_RandomByte() < 128)
-					bestleader = #player
-				end
-			end
-			--Follow the bottom feeder of the leader chain
-			--But only if we're a bot! Otherwise just get the top leader
-			if bestleader > -1
-				if bot.ai
-					bestleader = #GetBottomFollower(players[bestleader], bot)
-				else
-					bestleader = #GetTopLeader(players[bestleader], bot)
-				end
-			end
-			SetBot(bot, bestleader)
+			--CD: Otherwise don't bother
+			--(foxBot will maintain its own valid leader if necessary)
 			return
 		end
 
-		--Derp
+		--CD: Derp
 		leader = bai.leader
 
 		--Reset leader to realleader if it's no longer valid or spectating
@@ -713,28 +689,38 @@ addHook("PreThinkFrame", function()
 	end
 end)
 
---Handle MapLoad stuff
-addHook("MapLoad", function(mapnum)
-	local pcount = 0
+--Handle MapChange for resetting things
+addHook("MapChange", function(mapnum)
 	for player in players.iterate
-		pcount = $ + 1
 		if player.cdinfo
 			ResetAI(player.cdinfo)
 		end
 	end
 
+	--Reset enemy count
+	enemyct = 0
+	targetenemyct = 0
+
+	--Reset lives if exhausted
+	if teamlives < 1
+		teamlives = 4
+	end
+end)
+
+--Handle MapLoad for post-load actions
+addHook("MapLoad", function(mapnum)
 	--Decrement lives! Oof
 	if not G_IsSpecialStage()
-		teamlives = max($ - pcount, 1)
+		for player in players.iterate
+			teamlives = max($ - 1, 1)
+		end
 	end
 
 	--Count up enemies
-	enemyct = 0
-	targetenemyct = 0
 	for mobj in mobjs.iterate()
 		if mobj.flags & (MF_BOSS | MF_ENEMY)
 			targetenemyct = $ + 1
-			mobj.cd_active = true
+			mobj.cd_active = 1 --Increments enemyct
 
 			--Debug
 			--mobj.colorized = true
@@ -744,9 +730,22 @@ addHook("MapLoad", function(mapnum)
 	targetenemyct = $ * CV_CDEnemyClearPct.value / 100
 end)
 
+--Handle enemy spawning
+addHook("MobjSpawn", function(mobj)
+	--Flag enemy as "active" to run damage hooks etc. on
+	if mobj.flags & (MF_BOSS | MF_ENEMY)
+	and not mobj.cd_active
+		mobj.cd_active = 2 --Doesn't increment enemyct
+
+		--Debug
+		--mobj.colorized = true
+		--mobj.color = SKINCOLOR_GREEN
+	end
+end)
+
 --Handle enemy damage (now with more merp)
 addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
-	if (target.flags & (MF_BOSS | MF_ENEMY))
+	if target.cd_active
 	and source and source.valid
 		if not target.cd_lastattacker
 			target.cd_lastattacker = source
@@ -766,20 +765,20 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 					target.color = SKINCOLOR_YELLOW
 				end
 			else
-				target.color = SKINCOLOR_GREEN
+				target.color = SKINCOLOR_YELLOW
 			end
 
 			--Boop!
-			S_StartSound(target, sfx_dmpain)
-			target.flags2 = $ | MF2_FRET
 			target.cd_frettime = TICRATE / 4
+			target.flags2 = $ | MF2_FRET
+			S_StartSound(target, sfx_dmpain)
 			return true
 		elseif target.cd_lastattacker == source
 			--Merp
 			if not target.cd_frettime
 			and inflictor and inflictor.player
-				S_StartSound(target, sfx_s3k7b)
 				target.cd_frettime = TICRATE / 2
+				S_StartSound(target, sfx_s3k7b)
 
 				--Count number of merps, eventually retaliating
 				--Bosses are mean and do this immediately
@@ -791,7 +790,8 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 				else
 					target.cd_merpcount = $ - 1
 					if target.cd_merpcount < 2
-						target.flags2 = $ | MF2_FRET --cd_frettime already set above
+						--cd_frettime already set above
+						target.flags2 = $ | MF2_FRET
 					end
 					if target.cd_merpcount <= 0
 						S_StartSound(inflictor, sfx_shldls)
@@ -814,13 +814,16 @@ end)
 
 --Handle enemy death
 addHook("MobjDeath", function(target, inflictor, source, damagetype)
-	if target.flags & (MF_BOSS | MF_ENEMY)
+	if target.cd_active
 		--Decolorize for proper explosion fx
 		target.colorized = false
 		target.color = SKINCOLOR_NONE
 
 		--Increment enemy count!
-		enemyct = $ + 1
+		--But only if initially spawned in
+		if target.cd_active == 1
+			enemyct = $ + 1
+		end
 	end
 end)
 
@@ -839,8 +842,8 @@ addHook("MobjThinker", function(mobj)
 		if mobj.cd_frettime
 			mobj.cd_frettime = $ - 1
 			if mobj.cd_frettime <= 0
-				mobj.flags2 = $ & ~MF2_FRET
 				mobj.cd_frettime = nil
+				mobj.flags2 = $ & ~MF2_FRET
 			end
 		end
 
@@ -853,7 +856,10 @@ addHook("MobjThinker", function(mobj)
 			mobj.color = SKINCOLOR_NONE
 
 			--Increment enemy count!
-			enemyct = $ + 1
+			--But only if initially spawned in
+			if mobj.cd_active == 1
+				enemyct = $ + 1
+			end
 		end
 	end
 end)
@@ -862,26 +868,57 @@ end)
 addHook("TouchSpecial", function(special, toucher)
 	if not special.cd_lastattacker
 		special.cd_lastattacker = toucher
+
+		--Handle colorization
 		special.colorized = true
-		if toucher.player
-			if toucher.player == consoleplayer
-				if splitscreen
-					special.color = SKINCOLOR_GREEN
-				else
-					special.color = SKINCOLOR_GREY
-				end
-			elseif toucher.player == secondarydisplayplayer
-				special.color = SKINCOLOR_PINK
-			else
-				special.color = SKINCOLOR_YELLOW
-			end
-		else
-			special.color = SKINCOLOR_AZURE
-		end
+		special.color = SKINCOLOR_WHITE
+
+		--*iconic sphere noises*
+		special.cd_frettime = TICRATE / 8
 		S_StartSound(toucher, sfx_s3k65)
 		return true
 	elseif special.cd_lastattacker == toucher
+	or special.cd_frettime --Simulate MF2_FRET behavior
 		return true
+	end
+end, MT_BLUESPHERE)
+
+--Handle special stage sphere tic logic
+addHook("MobjThinker", function(mobj)
+	--Fix grey enemies for mid-game joiners
+	if mobj.color == SKINCOLOR_GREY
+	and mobj.cd_lastattacker
+	and mobj.cd_lastattacker.valid
+	and mobj.cd_lastattacker.player != consoleplayer
+		mobj.color = SKINCOLOR_YELLOW
+	end
+
+	--Decrement frettime
+	if mobj.cd_frettime
+		mobj.cd_frettime = $ - 1
+		mobj.colorized = not $ --Flash on/off
+		if mobj.cd_frettime <= 0
+			mobj.cd_frettime = nil
+
+			--Set target color when done
+			mobj.colorized = true
+			if mobj.cd_lastattacker
+			and mobj.cd_lastattacker.player
+				if mobj.cd_lastattacker.player == consoleplayer
+					if splitscreen
+						mobj.color = SKINCOLOR_AZURE
+					else
+						mobj.color = SKINCOLOR_GREY
+					end
+				elseif mobj.cd_lastattacker.player == secondarydisplayplayer
+					mobj.color = SKINCOLOR_PINK
+				else
+					mobj.color = SKINCOLOR_YELLOW
+				end
+			else
+				mobj.color = SKINCOLOR_YELLOW
+			end
+		end
 	end
 end, MT_BLUESPHERE)
 
@@ -1017,12 +1054,13 @@ local function BotHelp(player)
 		"\x87 Coop or Die! v0.x: 2021-XX-XX",
 		"",
 		"\x87 MP Server Admin:",
-		"\x80  ai_telemode - Override AI teleport behavior w/ button press?",
+		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
+		"\x80  cd_telemode - Override teleport behavior w/ button press?",
 		"\x86   (64 = fire, 1024 = toss flag, 4096 = alt fire, etc.)",
-		"\x80  setleadera <leader> <bot> - Have <bot> follow <leader> by number \x86(-1 = stop)",
+		"\x80  setleadera <leader> <plr> - Have <plr> follow <leader> by number \x86(-1 = stop)",
 		"",
 		"\x87 MP Client:",
-		"\x80  cd_showhud - Draw basic bot info to HUD?",
+		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",
 		"\x80  setleader <leader> - Follow <leader> by number \x86(-1 = stop)",
 		"\x80  listplayers - List active bots and players"
 	)
