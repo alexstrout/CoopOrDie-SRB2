@@ -835,6 +835,7 @@ local function HandleDeath(target, inflictor, source, damagetype)
 	end
 end
 addHook("MobjDeath", HandleDeath)
+addHook("MobjRemoved", HandleDeath)
 
 --Handle mobj tic logic
 addHook("MobjThinker", function(mobj)
@@ -854,12 +855,6 @@ addHook("MobjThinker", function(mobj)
 				mobj.cd_frettime = nil
 				mobj.flags2 = $ & ~MF2_FRET
 			end
-		end
-
-		--Fix stuff like MT_BIGMINE un-enemying itself!
-		if not ValidEnemy(mobj)
-			--Treat as a normal death
-			HandleDeath(mobj)
 		end
 	end
 end)
