@@ -77,6 +77,9 @@ addHook("NetVars", function(network)
 	targetenemyct = network($)
 end)
 
+--Enemies ineligible for enemyct / targetenemyct
+mobjinfo[MT_BUMBLEBORE].cd_skipcount = true
+
 --Team lives sfx to use on life loss
 local teamlivessfx = {}
 teamlivessfx[1] = sfx_bnce1
@@ -445,6 +448,11 @@ end
 
 	--------------------------------------------------------------------------------
 ]]
+--Determine if we're a valid enemy for CD purposes
+local function ValidEnemy(mobj)
+	return mobj.flags & (MF_BOSS | MF_ENEMY)
+end
+
 --Drive players based on whatever unholy mess is in this function
 --Note that "bot" and "bai" are misnomers, but renames weren't necessary
 local function PreThinkFrameFor(bot)
@@ -717,10 +725,10 @@ addHook("MapLoad", function(mapnum)
 	end
 
 	--Count up enemies
+	--Only done here to avoid altering targetenemyct mid-game
 	for mobj in mobjs.iterate()
-		if mobj.flags & (MF_BOSS | MF_ENEMY)
+		if ValidEnemy(mobj)
 			targetenemyct = $ + 1
-			mobj.cd_active = 1 --Increments enemyct
 
 			--Debug
 			--mobj.colorized = true
@@ -733,9 +741,8 @@ end)
 --Handle enemy spawning
 addHook("MobjSpawn", function(mobj)
 	--Flag enemy as "active" to run damage hooks etc. on
-	if mobj.flags & (MF_BOSS | MF_ENEMY)
-	and not mobj.cd_active
-		mobj.cd_active = 2 --Doesn't increment enemyct
+	if ValidEnemy(mobj)
+		mobj.cd_active = true
 
 		--Debug
 		--mobj.colorized = true
@@ -813,19 +820,21 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 end)
 
 --Handle enemy death
-addHook("MobjDeath", function(target, inflictor, source, damagetype)
+local function HandleDeath(target, inflictor, source, damagetype)
 	if target.cd_active
+		target.cd_active = false
+
 		--Decolorize for proper explosion fx
 		target.colorized = false
 		target.color = SKINCOLOR_NONE
 
 		--Increment enemy count!
-		--But only if initially spawned in
-		if target.cd_active == 1
+		if not target.info.cd_skipcount
 			enemyct = $ + 1
 		end
 	end
-end)
+end
+addHook("MobjDeath", HandleDeath)
 
 --Handle mobj tic logic
 addHook("MobjThinker", function(mobj)
@@ -848,18 +857,9 @@ addHook("MobjThinker", function(mobj)
 		end
 
 		--Fix stuff like MT_BIGMINE un-enemying itself!
-		if not (mobj.flags & (MF_BOSS | MF_ENEMY))
-			mobj.cd_active = nil
-
-			--Decolorize for proper explosion fx
-			mobj.colorized = false
-			mobj.color = SKINCOLOR_NONE
-
-			--Increment enemy count!
-			--But only if initially spawned in
-			if mobj.cd_active == 1
-				enemyct = $ + 1
-			end
+		if not ValidEnemy(mobj)
+			--Treat as a normal death
+			HandleDeath(mobj)
 		end
 	end
 end)
