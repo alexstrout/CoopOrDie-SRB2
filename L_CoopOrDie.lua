@@ -734,6 +734,11 @@ addHook("MapLoad", function(mapnum)
 	for mobj in mobjs.iterate()
 		if mobj.flags & (MF_BOSS | MF_ENEMY)
 			targetenemyct = $ + 1
+			mobj.cd_active = true
+
+			--Debug
+			--mobj.colorized = true
+			--mobj.color = SKINCOLOR_ORANGE
 		end
 	end
 	targetenemyct = $ * CV_CDEnemyClearPct.value / 100
@@ -742,22 +747,26 @@ end)
 --Handle enemy damage (now with more merp)
 addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 	if (target.flags & (MF_BOSS | MF_ENEMY))
-	and source and source.valid and source.player
+	and source and source.valid
 		if not target.cd_lastattacker
 			target.cd_lastattacker = source
 
 			--Handle colorization
 			target.colorized = true
-			if source.player == consoleplayer
-				if splitscreen
-					target.color = SKINCOLOR_BLUEBELL
+			if source.player
+				if source.player == consoleplayer
+					if splitscreen
+						target.color = SKINCOLOR_AZURE
+					else
+						target.color = SKINCOLOR_GREY
+					end
+				elseif source.player == secondarydisplayplayer
+					target.color = SKINCOLOR_PINK
 				else
-					target.color = SKINCOLOR_GREY
+					target.color = SKINCOLOR_YELLOW
 				end
-			elseif source.player == secondarydisplayplayer
-				target.color = SKINCOLOR_PINK
 			else
-				target.color = SKINCOLOR_YELLOW
+				target.color = SKINCOLOR_GREEN
 			end
 
 			--Boop!
@@ -817,9 +826,10 @@ end)
 
 --Handle mobj tic logic
 addHook("MobjThinker", function(mobj)
-	if mobj.cd_lastattacker
+	if mobj.cd_active
 		--Fix grey enemies for mid-game joiners
 		if mobj.color == SKINCOLOR_GREY
+		and mobj.cd_lastattacker
 		and mobj.cd_lastattacker.valid
 		and mobj.cd_lastattacker.player != consoleplayer
 			mobj.color = SKINCOLOR_YELLOW
@@ -832,6 +842,18 @@ addHook("MobjThinker", function(mobj)
 				mobj.flags2 = $ & ~MF2_FRET
 				mobj.cd_frettime = nil
 			end
+		end
+
+		--Fix stuff like MT_BIGMINE un-enemying itself!
+		if not (mobj.flags & (MF_BOSS | MF_ENEMY))
+			mobj.cd_active = nil
+
+			--Decolorize for proper explosion fx
+			mobj.colorized = false
+			mobj.color = SKINCOLOR_NONE
+
+			--Increment enemy count!
+			enemyct = $ + 1
 		end
 	end
 end)
