@@ -73,13 +73,23 @@ local CV_CDShowHud = CV_RegisterVar({
 local teamlives = 0
 
 --Current percentage of enemies destroyed in stage
-local enemypct = 0
+local enemyct = 0
+local targetenemyct = 0
 
 --NetVars!
 addHook("NetVars", function(network)
-	teamlives = network(teamlives)
-	enemypct = network(enemypct)
+	teamlives = network($)
+	enemyct = network($)
+	targetenemyct = network($)
 end)
+
+--Team lives sfx to use on life loss
+local teamlivessfx = {}
+teamlivessfx[1] = sfx_bnce1
+teamlivessfx[2] = sfx_s3k87
+teamlivessfx[3] = sfx_s3k99
+teamlivessfx[4] = sfx_bnce1
+teamlivessfx[5] = sfx_s3kae
 
 --Text table used for HUD hook
 local hudtext = {}
@@ -458,16 +468,24 @@ local function PreThinkFrameFor(bot)
 	--Handle lives here
 	if bot.lives != bai.lastlives
 		teamlives = bot.lives
-	elseif leveltime
+	elseif leveltime and bot.jointime
 	and bot.lives != teamlives
 		if bot.lives < teamlives
 			P_PlayLivesJingle(bot)
 		elseif bot.realmo and bot.realmo.valid
-			S_StartSound(bot.realmo, sfx_s3k7b, bot)
+			local i = P_RandomKey(table.maxn(teamlivessfx)) + 1
+			S_StartSound(bot.realmo, teamlivessfx[i], bot)
 		end
 	end
 	bot.lives = teamlives
 	bai.lastlives = teamlives
+
+	--Handle exiting here
+	if (bot.pflags & PF_FINISHED)
+	and enemyct < targetenemyct
+		P_DamageMobj(bot.mo, nil, nil, 420, DMG_INSTAKILL)
+		bot.pflags = $ & ~PF_FINISHED
+	end
 
 	--Derp
 	local leader = nil
@@ -695,8 +713,8 @@ addHook("PreThinkFrame", function()
 	end
 end)
 
---Handle MapChange for bots (e.g. call ResetAI)
-addHook("MapChange", function(mapnum)
+--Handle MapLoad stuff
+addHook("MapLoad", function(mapnum)
 	local pcount = 0
 	for player in players.iterate
 		pcount = $ + 1
@@ -706,10 +724,22 @@ addHook("MapChange", function(mapnum)
 	end
 
 	--Decrement lives! Oof
-	teamlives = max($ - pcount, 1)
+	if not G_IsSpecialStage()
+		teamlives = max($ - pcount, 1)
+	end
+
+	--Count up enemies
+	enemyct = 0
+	targetenemyct = 0
+	for mobj in mobjs.iterate()
+		if mobj.flags & (MF_BOSS | MF_ENEMY)
+			targetenemyct = $ + 1
+		end
+	end
+	targetenemyct = $ * CV_CDEnemyClearPct.value / 100
 end)
 
---Handle damage for mobjs (now with more merp)
+--Handle enemy damage (now with more merp)
 addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 	if (target.flags & (MF_BOSS | MF_ENEMY))
 	and source and source.valid and source.player
@@ -736,29 +766,52 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			target.cd_frettime = TICRATE / 4
 			return true
 		elseif target.cd_lastattacker == source
+			--Merp
 			if not target.cd_frettime
+			and inflictor and inflictor.player
 				S_StartSound(target, sfx_s3k7b)
 				target.cd_frettime = TICRATE / 2
+
+				--Count number of merps, eventually retaliating
+				--Bosses are mean and do this immediately
+				if target.flags & MF_BOSS
+					target.cd_merpcount = 1
+				end
 				if not target.cd_merpcount
 					target.cd_merpcount = 3
 				else
 					target.cd_merpcount = $ - 1
 					if target.cd_merpcount < 2
-						target.flags2 = $ | MF2_FRET
+						target.flags2 = $ | MF2_FRET --cd_frettime already set above
 					end
 					if target.cd_merpcount <= 0
-						S_StartSound(source, sfx_shldls)
-						P_DoPlayerPain(source.player, target, inflictor)
+						S_StartSound(inflictor, sfx_shldls)
+						P_DoPlayerPain(inflictor.player, target, target)
 						target.cd_merpcount = nil
 					end
 				end
 			end
 			return true
 		else
-			--Decolorize for proper explosion fx
+			--Allow hit trading on bosses etc.
+			target.cd_lastattacker = nil
+
+			--Decolorize for proper explosion fx / bosses
 			target.colorized = false
 			target.color = SKINCOLOR_NONE
 		end
+	end
+end)
+
+--Handle enemy death
+addHook("MobjDeath", function(target, inflictor, source, damagetype)
+	if target.flags & (MF_BOSS | MF_ENEMY)
+		--Decolorize for proper explosion fx
+		target.colorized = false
+		target.color = SKINCOLOR_NONE
+
+		--Increment enemy count!
+		enemyct = $ + 1
 	end
 end)
 
@@ -809,9 +862,24 @@ hud.add(function(v, stplyr, cam)
 		end
 
 		--Otherwise generate a simple bot hud
-		local i = 1
+		local i = 100
+		if targetenemyct > 0
+			i = enemyct * 100 / targetenemyct
+		end
+		hudtext[1] = i .. "%"
+		hudtext[2] = "Enemy Goal:"
+		if i < 33
+			hudtext[1] = "\x85" .. $
+		elseif i < 66
+			hudtext[1] = "\x87" .. $
+		elseif i < 100
+			hudtext[1] = "\x82" .. $
+		else
+			hudtext[1] = "\x83" .. "Done!"
+		end
 
 		--Put leader up top
+		i = 3
 		if stplyr.cdinfo.leader
 		and stplyr.cdinfo.leader.valid
 			i = BuildHudFor(v, stplyr, cam, stplyr.cdinfo.leader, i)
@@ -835,7 +903,7 @@ hud.add(function(v, stplyr, cam)
 			end
 
 			--Stop after 12 players
-			if i > 48
+			if i > 50 --12 players * 4 hudtext each + 2 for enemyct
 				break
 			end
 		end
@@ -873,11 +941,11 @@ hud.add(function(v, stplyr, cam)
 			y = $ + 4 * scale
 
 			--Insert a small line break between players
-			if k % 4 == 0
+			if (k + 2) % 4 == 0
 				y = $ + 2 * scale
 
 				--Wrap to another column if needed
-				if k % 64 == 0 --16 players * 4 hudtext each
+				if (k + 2) % 64 == 0 --16 players * 4 hudtext each
 					x = $ + 64 * scale
 					y = $ - 160 * scale --Honor splitscreen etc.
 				end
