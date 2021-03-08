@@ -143,6 +143,7 @@ end
 local function ResetAI(ai)
 	ai.playernosight = 0 --How long the player has been out of view
 	ai.doteleport = false --AI is attempting to teleport
+	ai.reborn = false --Just recently reborn from hitting end of level
 end
 
 --Register follower with leader for lookup later
@@ -484,8 +485,17 @@ local function PreThinkFrameFor(bot)
 	--CD: Handle exiting here
 	if (bot.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
-		P_DamageMobj(bot.mo, nil, nil, 420, DMG_INSTAKILL)
+		bot.starpostnum = 0
+		bot.starposttime = 0
 		bot.pflags = $ & ~PF_FINISHED
+		bot.playerstate = PST_REBORN
+		bai.reborn = true
+		return
+	end
+	if bai.reborn
+		S_StartSound(bmo, sfx_mixup)
+		P_FlashPal(bot, PAL_MIXUP, TICRATE / 4)
+		bai.reborn = false
 	end
 
 	--CD: Derp
