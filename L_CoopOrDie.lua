@@ -745,7 +745,10 @@ addHook("MapLoad", function(mapnum)
 			--mobj.color = SKINCOLOR_ORANGE
 		end
 	end
-	targetenemyct = $ * CV_CDEnemyClearPct.value / 100
+	targetenemyct = min(
+		$ * CV_CDEnemyClearPct.value / 100,
+		CV_CDEnemyClearMax.value
+	)
 end)
 
 --Handle enemy spawning
@@ -765,7 +768,9 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 	if target.cd_active
 	and source and source.valid
 		if not target.cd_lastattacker
-			target.cd_lastattacker = source
+			target.cd_lastattacker = {}
+			target.cd_lastattacker.mo = source
+			target.cd_lastattacker.player = source.player
 
 			--Handle colorization
 			target.colorized = true
@@ -790,7 +795,8 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			target.flags2 = $ | MF2_FRET
 			S_StartSound(target, sfx_dmpain)
 			return true
-		elseif target.cd_lastattacker == source
+		elseif target.cd_lastattacker.mo == source
+		or target.cd_lastattacker.player == source.player
 			--Merp
 			if not target.cd_frettime
 			and inflictor and inflictor.player
@@ -853,7 +859,6 @@ addHook("MobjThinker", function(mobj)
 		--Fix grey enemies for mid-game joiners
 		if mobj.color == SKINCOLOR_GREY
 		and mobj.cd_lastattacker
-		and mobj.cd_lastattacker.valid
 		and mobj.cd_lastattacker.player != consoleplayer
 			mobj.color = SKINCOLOR_YELLOW
 		end
@@ -872,7 +877,9 @@ end)
 --Handle special stage spheres
 addHook("TouchSpecial", function(special, toucher)
 	if not special.cd_lastattacker
-		special.cd_lastattacker = toucher
+		special.cd_lastattacker = {}
+		special.cd_lastattacker.mo = toucher
+		special.cd_lastattacker.player = player
 
 		--Handle colorization
 		special.colorized = true
@@ -882,7 +889,8 @@ addHook("TouchSpecial", function(special, toucher)
 		special.cd_frettime = TICRATE / 8
 		S_StartSound(toucher, sfx_s3k65)
 		return true
-	elseif special.cd_lastattacker == toucher
+	elseif special.cd_lastattacker.mo == toucher
+	or special.cd_lastattacker.player == toucher.player
 	or special.cd_frettime --Simulate MF2_FRET behavior
 		return true
 	end
@@ -893,7 +901,6 @@ addHook("MobjThinker", function(mobj)
 	--Fix grey enemies for mid-game joiners
 	if mobj.color == SKINCOLOR_GREY
 	and mobj.cd_lastattacker
-	and mobj.cd_lastattacker.valid
 	and mobj.cd_lastattacker.player != consoleplayer
 		mobj.color = SKINCOLOR_YELLOW
 	end
@@ -908,7 +915,6 @@ addHook("MobjThinker", function(mobj)
 			--Set target color when done
 			mobj.colorized = true
 			if mobj.cd_lastattacker
-			and mobj.cd_lastattacker.player
 				if mobj.cd_lastattacker.player == consoleplayer
 					if splitscreen
 						mobj.color = SKINCOLOR_AZURE
