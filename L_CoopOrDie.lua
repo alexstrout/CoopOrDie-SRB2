@@ -71,6 +71,24 @@ local CV_CDShowHud = CV_RegisterVar({
 
 --[[
 	--------------------------------------------------------------------------------
+	GLOBAL TYPE DEFINITIONS
+	Defines any mobj types etc. needed by CoopOrDie
+	--------------------------------------------------------------------------------
+]]
+freeslot(
+	"MT_FOXCD_SCOREBOP"
+)
+mobjinfo[MT_FOXCD_SCOREBOP] = {
+	spawnstate = S_INVISIBLE,
+	radius = FRACUNIT,
+	height = FRACUNIT,
+	flags = MF_NOGRAVITY|MF_NOCLIP|MF_NOTHINK|MF_NOCLIPHEIGHT|MF_ENEMY
+}
+
+
+
+--[[
+	--------------------------------------------------------------------------------
 	GLOBAL HELPER VALUES / FUNCTIONS
 	Used in various points throughout code
 	--------------------------------------------------------------------------------
@@ -91,6 +109,7 @@ end)
 
 --Enemies ineligible for enemyct / targetenemyct
 mobjinfo[MT_BUMBLEBORE].cd_skipcount = true
+mobjinfo[MT_FOXCD_SCOREBOP].cd_skipcount = true
 
 --Team lives sfx to use on life loss
 local teamlivessfx = {}
@@ -748,6 +767,7 @@ addHook("MapLoad", function(mapnum)
 	--Only done here to avoid altering targetenemyct mid-game
 	for mobj in mobjs.iterate()
 		if ValidEnemy(mobj)
+		and not mobj.info.cd_skipcount
 			targetenemyct = $ + 1
 
 			--Debug
@@ -800,6 +820,12 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 				target.color = SKINCOLOR_YELLOW
 			end
 
+			--Spawn and immediately destroy a scorebop
+			--This gives us POINTS using native scoring
+			local scorebop = P_SpawnMobjFromMobj(target, 0, 0, 0, MT_FOXCD_SCOREBOP)
+			scorebop.height = target.height
+			P_KillMobj(scorebop, inflictor, source, damagetype)
+
 			--Boop!
 			target.cd_frettime = TICRATE / 4
 			target.flags2 = $ | MF2_FRET
@@ -847,7 +873,8 @@ end)
 
 --Handle enemy death
 local function HandleDeath(target, inflictor, source, damagetype)
-	if target.cd_active
+	--Need to check leveltime as MobjRemoved may fire outside level
+	if leveltime and target.cd_active
 		target.cd_active = false
 
 		--Decolorize for proper explosion fx
@@ -908,7 +935,7 @@ addHook("TouchSpecial", function(special, toucher)
 	if not special.cd_lastattacker
 		special.cd_lastattacker = {}
 		special.cd_lastattacker.mo = toucher
-		special.cd_lastattacker.player = player
+		special.cd_lastattacker.player = toucher.player
 
 		--Handle colorization
 		special.colorized = true
