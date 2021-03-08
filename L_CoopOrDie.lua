@@ -42,6 +42,18 @@ local CV_CDEnemyClearPct = CV_RegisterVar({
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = {MIN = 20, MAX = 80}
 })
+local CV_CDEnemyClearMax = CV_RegisterVar({
+	name = "cd_enemyclearmax",
+	defaultvalue = "200",
+	flags = CV_NETVAR|CV_SHOWMODIF,
+	PossibleValue = {MIN = 0, MAX = UINT16_MAX}
+})
+local CV_CDResetTagsOnDeath = CV_RegisterVar({
+	name = "cd_resettagsondeath",
+	defaultvalue = "Off",
+	flags = CV_NETVAR|CV_SHOWMODIF,
+	PossibleValue = CV_OnOff
+})
 local CV_CDTeleMode = CV_RegisterVar({
 	name = "cd_telemode",
 	defaultvalue = "0",
@@ -720,9 +732,7 @@ addHook("MapChange", function(mapnum)
 	targetenemyct = 0
 
 	--Reset lives if exhausted
-	if teamlives < 1
-		teamlives = 4
-	end
+	teamlives = max($, 4)
 end)
 
 --Handle MapLoad for post-load actions
@@ -852,6 +862,25 @@ local function HandleDeath(target, inflictor, source, damagetype)
 end
 addHook("MobjDeath", HandleDeath)
 addHook("MobjRemoved", HandleDeath)
+
+--Handle player death
+addHook("MobjDeath", function(target, inflictor, source, damagetype)
+	if CV_CDResetTagsOnDeath.value
+		for mobj in mobjs.iterate()
+			if mobj.cd_lastattacker
+			and (
+				mobj.cd_lastattacker.mo == target
+				or mobj.cd_lastattacker.player == target.player
+			)
+				mobj.cd_lastattacker = nil
+
+				--Decolorize
+				mobj.colorized = false
+				mobj.color = SKINCOLOR_NONE
+			end
+		end
+	end
+end, MT_PLAYER)
 
 --Handle mobj tic logic
 addHook("MobjThinker", function(mobj)
@@ -1066,9 +1095,10 @@ local function BotHelp(player)
 		"",
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
+		"\x80  cd_enemyclearmax - Maximum # of enemies for cd_enemyclearpct",
+		"\x80  cd_resettagsondeath - Reset players' enemy tags on death?",
 		"\x80  cd_telemode - Override teleport behavior w/ button press?",
 		"\x86   (64 = fire, 1024 = toss flag, 4096 = alt fire, etc.)",
-		"\x80  setleadera <leader> <plr> - Have <plr> follow <leader> by number \x86(-1 = stop)",
 		"",
 		"\x87 MP Client:",
 		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",
