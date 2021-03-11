@@ -36,11 +36,17 @@
 	(see "bothelp" at bottom for a description of each)
 	--------------------------------------------------------------------------------
 ]]
+local CV_CDDebug = CV_RegisterVar({
+	name = "cd_debug",
+	defaultvalue = "Off",
+	flags = 0,
+	PossibleValue = CV_OnOff
+})
 local CV_CDEnemyClearPct = CV_RegisterVar({
 	name = "cd_enemyclearpct",
 	defaultvalue = "60",
 	flags = CV_NETVAR|CV_SHOWMODIF,
-	PossibleValue = {MIN = 20, MAX = 80}
+	PossibleValue = {MIN = 0, MAX = 100}
 })
 local CV_CDEnemyClearMax = CV_RegisterVar({
 	name = "cd_enemyclearmax",
@@ -111,13 +117,8 @@ end)
 mobjinfo[MT_BUMBLEBORE].cd_skipcount = true
 mobjinfo[MT_FOXCD_SCOREBOP].cd_skipcount = true
 
---Team lives sfx to use on life loss
-local teamlivessfx = {}
-teamlivessfx[1] = sfx_bnce1
-teamlivessfx[2] = sfx_s3k87
-teamlivessfx[3] = sfx_s3k99
-teamlivessfx[4] = sfx_bnce1
-teamlivessfx[5] = sfx_s3kae
+--Next notification threshold
+local notifythreshold = 0
 
 --Text table used for HUD hook
 local hudtext = {}
@@ -206,7 +207,9 @@ local function SetupAI(player)
 	player.cdinfo = {
 		leader = nil, --Bot's leader
 		realleader = nil, --Bot's "real" leader (if temporarily following someone else)
-		lastlives = player.lives --Last life count of bot (used to sync w/ leader)
+		lastrings = 0, --Last ring count of bot (used for end-of-level teleport)
+		lastxtralife = 0, --Last xtralife count of bot (also used for eol teleport)
+		lastlives = player.lives --Last life count of bot (used to sync w/ team)
 	}
 	ResetAI(player.cdinfo) --Define the rest w/ their respective values
 end
@@ -499,23 +502,26 @@ local function PreThinkFrameFor(bot)
 	local bai = bot.cdinfo
 
 	--CD: Handle lives here
-	if bot.lives != bai.lastlives
-		teamlives = bot.lives
-	elseif leveltime and bot.jointime
-	and bot.lives != teamlives
-		if bot.lives < teamlives
-			P_PlayLivesJingle(bot)
-		elseif bot.realmo and bot.realmo.valid
-			local i = P_RandomKey(table.maxn(teamlivessfx)) + 1
-			S_StartSound(bot.realmo, teamlivessfx[i], bot)
+	if bot.lives > 0
+	and bai.lastlives > 0
+		if bot.lives != bai.lastlives
+			teamlives = bot.lives
+		elseif teamlives > bot.lives
+			if leveltime
+				P_PlayLivesJingle(bot)
+			end
+			P_GivePlayerLives(bot, teamlives - bot.lives)
+		else
+			bot.lives = teamlives
 		end
 	end
-	bot.lives = teamlives
-	bai.lastlives = teamlives
+	bai.lastlives = bot.lives
 
 	--CD: Handle exiting here
 	if (bot.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
+		bai.lastrings = bot.rings
+		bai.lastxtralife = bot.xtralife
 		bot.starpostnum = 0
 		bot.starposttime = 0
 		bot.pflags = $ & ~PF_FINISHED
@@ -524,9 +530,11 @@ local function PreThinkFrameFor(bot)
 		return
 	end
 	if bai.reborn
+		bai.reborn = false
+		bot.rings = bai.lastrings
+		bot.xtralife = bai.lastxtralife
 		S_StartSound(bmo, sfx_mixup)
 		P_FlashPal(bot, PAL_MIXUP, TICRATE / 4)
-		bai.reborn = false
 	end
 
 	--CD: Derp
@@ -636,7 +644,13 @@ end
 
 --Build hudtext for a particular player
 local function BuildHudFor(v, stplyr, cam, player, i)
-	hudtext[i] = "\x82Rings \x80" .. player.rings
+	--Ring hud!
+	local rcolor = "\x82"
+	if player.rings <= 0
+	and leveltime % TICRATE < TICRATE / 2
+		rcolor = "\x85"
+	end
+	hudtext[i] = rcolor .. "Rings \x80" .. player.rings
 	hudtext[i + 1] = player.name
 	if player == stplyr.cdinfo.leader
 		hudtext[i + 1] = "\x83" .. $
@@ -729,12 +743,6 @@ end
 addHook("PreThinkFrame", function()
 	for player in players.iterate
 		PreThinkFrameFor(player)
-
-		--End the round if lives are exhausted
-		if teamlives < 1 and (leveltime + #player) % TICRATE == 0
-		and player.mo and player.mo.valid
-			P_DamageMobj(player.mo, nil, nil, 420, DMG_INSTAKILL)
-		end
 	end
 end)
 
@@ -749,6 +757,9 @@ addHook("MapChange", function(mapnum)
 	--Reset enemy count
 	enemyct = 0
 	targetenemyct = 0
+
+	--Reset notification threshold
+	notifythreshold = 33
 
 	--Reset lives if exhausted
 	teamlives = max($, 4)
@@ -771,8 +782,10 @@ addHook("MapLoad", function(mapnum)
 			targetenemyct = $ + 1
 
 			--Debug
-			--mobj.colorized = true
-			--mobj.color = SKINCOLOR_ORANGE
+			if CV_CDDebug.value
+				mobj.colorized = true
+				mobj.color = SKINCOLOR_ORANGE
+			end
 		end
 	end
 	targetenemyct = min(
@@ -788,8 +801,10 @@ addHook("MobjSpawn", function(mobj)
 		mobj.cd_active = true
 
 		--Debug
-		--mobj.colorized = true
-		--mobj.color = SKINCOLOR_GREEN
+		if CV_CDDebug.value
+			mobj.colorized = true
+			mobj.color = SKINCOLOR_GREEN
+		end
 	end
 end)
 
@@ -873,8 +888,8 @@ end)
 
 --Handle enemy death
 local function HandleDeath(target, inflictor, source, damagetype)
-	--Need to check leveltime as MobjRemoved may fire outside level
-	if leveltime and target.cd_active
+	--Need to check valid as MobjRemoved may fire outside level
+	if target.valid and target.cd_active
 		target.cd_active = false
 
 		--Decolorize for proper explosion fx
@@ -884,6 +899,20 @@ local function HandleDeath(target, inflictor, source, damagetype)
 		--Increment enemy count!
 		if not target.info.cd_skipcount
 			enemyct = $ + 1
+
+			--Make noises!
+			if targetenemyct > 0
+			and consoleplayer.realmo
+			and consoleplayer.realmo.valid
+				if enemyct >= targetenemyct
+					S_StartSound(consoleplayer.realmo, sfx_ideya, consoleplayer)
+					targetenemyct = 0
+				elseif notifythreshold <= 66
+				and enemyct * 100 / targetenemyct >= notifythreshold
+					S_StartSound(consoleplayer.realmo, sfx_3db06, consoleplayer)
+					notifythreshold = $ + 33
+				end
+			end
 		end
 	end
 end
@@ -1122,7 +1151,7 @@ local function BotHelp(player)
 		"",
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
-		"\x80  cd_enemyclearmax - Maximum # of enemies for cd_enemyclearpct",
+		"\x80  cd_enemyclearmax - Maximum # of enemies for level completion",
 		"\x80  cd_resettagsondeath - Reset players' enemy tags on death?",
 		"\x80  cd_telemode - Override teleport behavior w/ button press?",
 		"\x86   (64 = fire, 1024 = toss flag, 4096 = alt fire, etc.)",
