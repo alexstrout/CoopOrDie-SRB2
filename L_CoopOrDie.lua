@@ -105,20 +105,27 @@ local teamlives = 0
 --Current percentage of enemies destroyed in stage
 local enemyct = 0
 local targetenemyct = 0
+local notifythreshold = 0
 
 --NetVars!
 addHook("NetVars", function(network)
 	teamlives = network($)
 	enemyct = network($)
 	targetenemyct = network($)
+	notifythreshold = network($)
 end)
 
 --Enemies ineligible for enemyct / targetenemyct
 mobjinfo[MT_BUMBLEBORE].cd_skipcount = true
 mobjinfo[MT_FOXCD_SCOREBOP].cd_skipcount = true
 
---Next notification threshold
-local notifythreshold = 0
+--Enemies that bots should spin-attack when tagged
+mobjinfo[MT_SPINCUSHION].cd_aispinattack = true
+mobjinfo[MT_SPRINGSHELL].cd_aispinattack = true
+mobjinfo[MT_YELLOWSHELL].cd_aispinattack = true
+
+--Enemies that bots should prioritize when tagged
+mobjinfo[MT_HIVEELEMENTAL].cd_aipriority = true
 
 --Text table used for HUD hook
 local hudtext = {}
@@ -495,6 +502,14 @@ local function PreThinkFrameFor(bot)
 		return
 	end
 
+	--CD: Ensure foxBot always thinks first (in case it was loaded after this)
+	--There are some timing issues w/ life sync and EOL-warp ring transfer otherwise
+	--Ugly, but there's no way to guarantee which order players will load addons
+	if bot.ai and bot.ai.think_last != leveltime
+	and bot.ai.PreThinkFrameFor != nil
+		bot.ai.PreThinkFrameFor(bot)
+	end
+
 	--CD: Make sure we have a proper CoopOrDie info
 	if not bot.cdinfo
 		SetupAI(bot)
@@ -615,7 +630,7 @@ local function PreThinkFrameFor(bot)
 
 	--Check line of sight to player
 	if CheckSight(bmo, pmo)
-	and FixedHypot(dist, zdist) < 2048 * scale
+	and FixedHypot(dist, zdist) < 2048 * scale --CD: Add dist check here
 		bai.playernosight = 0
 	else
 		bai.playernosight = $ + 1
@@ -632,8 +647,10 @@ local function PreThinkFrameFor(bot)
 		--Post-teleport cleanup
 		bai.doteleport = false
 		bai.playernosight = 0
-		bai.anxiety = 0
-		bai.panic = 0
+		if bot.ai
+			bot.ai.anxiety = 0
+			bot.ai.panic = 0
+		end
 	end
 
 	--Teleport override?
@@ -759,7 +776,7 @@ addHook("MapChange", function(mapnum)
 	targetenemyct = 0
 
 	--Reset notification threshold
-	notifythreshold = 33
+	notifythreshold = 25
 
 	--Reset lives if exhausted
 	teamlives = max($, 4)
@@ -907,10 +924,10 @@ local function HandleDeath(target, inflictor, source, damagetype)
 				if enemyct >= targetenemyct
 					S_StartSound(consoleplayer.realmo, sfx_ideya, consoleplayer)
 					targetenemyct = 0
-				elseif notifythreshold <= 66
+				elseif notifythreshold <= 75
 				and enemyct * 100 / targetenemyct >= notifythreshold
 					S_StartSound(consoleplayer.realmo, sfx_3db06, consoleplayer)
-					notifythreshold = $ + 33
+					notifythreshold = 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
 				end
 			end
 		end
@@ -959,8 +976,12 @@ addHook("MobjThinker", function(mobj)
 	end
 end)
 
---Handle special stage spheres
+--Handle special stage spheres (unless we're in CR_NIGHTSMODE)
 addHook("TouchSpecial", function(special, toucher)
+	if toucher.player and toucher.player.valid
+	and toucher.player.powers[pw_carry] == CR_NIGHTSMODE
+		return nil
+	end
 	if not special.cd_lastattacker
 		special.cd_lastattacker = {}
 		special.cd_lastattacker.mo = toucher
@@ -1050,12 +1071,14 @@ hud.add(function(v, stplyr, cam)
 		end
 		hudtext[1] = i .. "%"
 		hudtext[2] = "Enemy Goal:"
-		if i < 33
+		if i < 25
 			hudtext[1] = "\x85" .. $
-		elseif i < 66
-			hudtext[1] = "\x87" .. $
+		elseif i < 50
+			hudtext[1] = "\x84" .. $
+		elseif i < 75
+			hudtext[1] = "\x81" .. $
 		elseif i < 100
-			hudtext[1] = "\x82" .. $
+			hudtext[1] = "\x8A" .. $
 		else
 			hudtext[1] = "\x83" .. "Done!"
 		end
@@ -1097,6 +1120,11 @@ hud.add(function(v, stplyr, cam)
 	local size = "small"
 	local size_r = "small-right"
 	local scale = 1
+
+	--Special stage?
+	if G_IsSpecialStage()
+		y = $ + 32
+	end
 
 	--Account for splitscreen
 	--Avoiding V_PERPLAYER as text gets a bit too squashed
