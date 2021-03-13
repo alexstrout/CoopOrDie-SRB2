@@ -107,13 +107,25 @@ local enemyct = 0
 local targetenemyct = 0
 local notifythreshold = 0
 
+--Current list of "active" mobj thinkers
+local mobjthinkers = {}
+
+--Track if we're a new client (re)joining the game
+--This is needed as PlayerJoin does not fire for rejoining clients
+local newclient = false
+
 --NetVars!
 addHook("NetVars", function(network)
 	teamlives = network($)
 	enemyct = network($)
 	targetenemyct = network($)
 	notifythreshold = network($)
+	mobjthinkers = network($)
+	newclient = true --Only set on server and joining client(s)
 end)
+
+--Cache of mobjthinker functions for quick lookup later
+local mobjthinkerfunc = {}
 
 --Enemies ineligible for enemyct / targetenemyct
 mobjinfo[MT_BUMBLEBORE].cd_skipcount = true
@@ -495,6 +507,55 @@ local function ValidEnemy(mobj)
 	return mobj.flags & (MF_BOSS | MF_ENEMY)
 end
 
+--Set skincolor for target mobj based on source
+local function SetColorFor(mobj, source)
+	if source
+		if source.player == consoleplayer
+			if splitscreen
+				mobj.color = SKINCOLOR_AZURE
+			else
+				mobj.color = SKINCOLOR_GREY
+			end
+		elseif source.player == secondarydisplayplayer
+			mobj.color = SKINCOLOR_PINK
+		else
+			mobj.color = SKINCOLOR_YELLOW
+		end
+	else
+		mobj.color = SKINCOLOR_YELLOW
+	end
+end
+
+--Handle mobj tic logic for enemies
+mobjthinkerfunc[1] = function(mobj) --MobjThinkForEnemy
+	--Decrement frettime
+	if mobj.cd_frettime
+		mobj.cd_frettime = $ - 1
+		if mobj.cd_frettime <= 0
+			mobjthinkers[mobj] = nil
+			mobj.cd_frettime = nil
+			mobj.flags2 = $ & ~MF2_FRET
+		end
+	end
+end
+
+--Handle mobj tic logic for spheres
+mobjthinkerfunc[2] = function(mobj) --MobjThinkForSphere
+	--Decrement frettime
+	if mobj.cd_frettime
+		mobj.cd_frettime = $ - 1
+		mobj.colorized = not $ --Flash on/off
+		if mobj.cd_frettime <= 0
+			mobjthinkers[mobj] = nil
+			mobj.cd_frettime = nil
+
+			--Set target color when done
+			mobj.colorized = true
+			SetColorFor(mobj, mobj.cd_lastattacker)
+		end
+	end
+end
+
 --Drive players based on whatever unholy mess is in this function
 --Note that "bot" and "bai" are misnomers, but renames weren't necessary
 local function PreThinkFrameFor(bot)
@@ -761,6 +822,23 @@ addHook("PreThinkFrame", function()
 	for player in players.iterate
 		PreThinkFrameFor(player)
 	end
+	for k_mobj, v_func in pairs(mobjthinkers)
+		mobjthinkerfunc[v_func](k_mobj)
+	end
+
+	--Handle anything required for (re)joining clients
+	--Note that consoleplayer is server for a few tics on new clients
+	--Thus, newclient never gets unset on the server itself, but that's ok
+	if newclient and consoleplayer != server
+		newclient = false
+
+		--Fix grey enemies for mid-game joiners
+		for mobj in mobjs.iterate()
+			if mobj.cd_lastattacker
+				SetColorFor(mobj, mobj.cd_lastattacker)
+			end
+		end
+	end
 end)
 
 --Handle MapChange for resetting things
@@ -771,12 +849,13 @@ addHook("MapChange", function(mapnum)
 		end
 	end
 
-	--Reset enemy count
+	--Reset enemy count / notification threshold
 	enemyct = 0
 	targetenemyct = 0
-
-	--Reset notification threshold
 	notifythreshold = 25
+
+	--Reset mobjthinkers
+	mobjthinkers = {}
 
 	--Reset lives if exhausted
 	teamlives = max($, 4)
@@ -836,21 +915,7 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 
 			--Handle colorization
 			target.colorized = true
-			if source.player
-				if source.player == consoleplayer
-					if splitscreen
-						target.color = SKINCOLOR_AZURE
-					else
-						target.color = SKINCOLOR_GREY
-					end
-				elseif source.player == secondarydisplayplayer
-					target.color = SKINCOLOR_PINK
-				else
-					target.color = SKINCOLOR_YELLOW
-				end
-			else
-				target.color = SKINCOLOR_YELLOW
-			end
+			SetColorFor(target, source)
 
 			--Spawn and immediately destroy a scorebop
 			--This gives us POINTS using native scoring
@@ -859,6 +924,7 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			P_KillMobj(scorebop, inflictor, source, damagetype)
 
 			--Boop!
+			mobjthinkers[target] = 1
 			target.cd_frettime = TICRATE / 4
 			target.flags2 = $ | MF2_FRET
 			S_StartSound(target, sfx_dmpain)
@@ -868,6 +934,7 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			--Merp
 			if not target.cd_frettime
 			and inflictor and inflictor.player
+				mobjthinkers[target] = 1
 				target.cd_frettime = TICRATE / 2
 				S_StartSound(target, sfx_s3k7b)
 
@@ -908,6 +975,8 @@ local function HandleDeath(target, inflictor, source, damagetype)
 	--Need to check valid as MobjRemoved may fire outside level
 	if target.valid and target.cd_active
 		target.cd_active = false
+		target.cd_lastattacker = nil
+		mobjthinkers[target] = nil
 
 		--Decolorize for proper explosion fx
 		target.colorized = false
@@ -955,27 +1024,6 @@ addHook("MobjDeath", function(target, inflictor, source, damagetype)
 	end
 end, MT_PLAYER)
 
---Handle mobj tic logic
-addHook("MobjThinker", function(mobj)
-	if mobj.cd_active
-		--Fix grey enemies for mid-game joiners
-		if mobj.color == SKINCOLOR_GREY
-		and mobj.cd_lastattacker
-		and mobj.cd_lastattacker.player != consoleplayer
-			mobj.color = SKINCOLOR_YELLOW
-		end
-
-		--Decrement frettime
-		if mobj.cd_frettime
-			mobj.cd_frettime = $ - 1
-			if mobj.cd_frettime <= 0
-				mobj.cd_frettime = nil
-				mobj.flags2 = $ & ~MF2_FRET
-			end
-		end
-	end
-end)
-
 --Handle special stage spheres (unless we're in CR_NIGHTSMODE)
 addHook("TouchSpecial", function(special, toucher)
 	if toucher.player and toucher.player.valid
@@ -992,6 +1040,7 @@ addHook("TouchSpecial", function(special, toucher)
 		special.color = SKINCOLOR_WHITE
 
 		--*iconic sphere noises*
+		mobjthinkers[special] = 2
 		special.cd_frettime = TICRATE / 8
 		S_StartSound(toucher, sfx_s3k65)
 		return true
@@ -999,43 +1048,6 @@ addHook("TouchSpecial", function(special, toucher)
 	or special.cd_lastattacker.player == toucher.player
 	or special.cd_frettime --Simulate MF2_FRET behavior
 		return true
-	end
-end, MT_BLUESPHERE)
-
---Handle special stage sphere tic logic
-addHook("MobjThinker", function(mobj)
-	--Fix grey enemies for mid-game joiners
-	if mobj.color == SKINCOLOR_GREY
-	and mobj.cd_lastattacker
-	and mobj.cd_lastattacker.player != consoleplayer
-		mobj.color = SKINCOLOR_YELLOW
-	end
-
-	--Decrement frettime
-	if mobj.cd_frettime
-		mobj.cd_frettime = $ - 1
-		mobj.colorized = not $ --Flash on/off
-		if mobj.cd_frettime <= 0
-			mobj.cd_frettime = nil
-
-			--Set target color when done
-			mobj.colorized = true
-			if mobj.cd_lastattacker
-				if mobj.cd_lastattacker.player == consoleplayer
-					if splitscreen
-						mobj.color = SKINCOLOR_AZURE
-					else
-						mobj.color = SKINCOLOR_GREY
-					end
-				elseif mobj.cd_lastattacker.player == secondarydisplayplayer
-					mobj.color = SKINCOLOR_PINK
-				else
-					mobj.color = SKINCOLOR_YELLOW
-				end
-			else
-				mobj.color = SKINCOLOR_YELLOW
-			end
-		end
 	end
 end, MT_BLUESPHERE)
 
