@@ -563,14 +563,6 @@ local function PreThinkFrameFor(bot)
 		return
 	end
 
-	--CD: Ensure foxBot always thinks first (in case it was loaded after this)
-	--There are some timing issues w/ life sync and EOL-warp ring transfer otherwise
-	--Ugly, but there's no way to guarantee which order players will load addons
-	if bot.ai and bot.ai.think_last != leveltime
-	and bot.ai.PreThinkFrameFor != nil
-		bot.ai.PreThinkFrameFor(bot)
-	end
-
 	--CD: Make sure we have a proper CoopOrDie info
 	if not bot.cdinfo
 		SetupAI(bot)
@@ -580,6 +572,7 @@ local function PreThinkFrameFor(bot)
 	--CD: Handle lives here
 	if bot.lives > 0
 	and bai.lastlives > 0
+	and not (bot.ai and bot.ai.synclives)
 		if bot.lives != bai.lastlives
 			teamlives = bot.lives
 		elseif teamlives > bot.lives
@@ -607,8 +600,10 @@ local function PreThinkFrameFor(bot)
 	end
 	if bai.reborn
 		bai.reborn = false
-		bot.rings = bai.lastrings
-		bot.xtralife = bai.lastxtralife
+		if not (bot.ai and bot.ai.syncrings)
+			bot.rings = bai.lastrings
+			bot.xtralife = bai.lastxtralife
+		end
 		S_StartSound(bmo, sfx_mixup)
 		P_FlashPal(bot, PAL_MIXUP, TICRATE / 4)
 	end
