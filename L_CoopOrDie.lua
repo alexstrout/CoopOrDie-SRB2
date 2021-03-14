@@ -60,17 +60,17 @@ local CV_CDResetTagsOnDeath = CV_RegisterVar({
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = CV_OnOff
 })
-local CV_CDTeleMode = CV_RegisterVar({
-	name = "cd_telemode",
-	defaultvalue = "0",
-	flags = CV_NETVAR|CV_SHOWMODIF,
-	PossibleValue = {MIN = 0, MAX = UINT16_MAX}
-})
 local CV_CDShowHud = CV_RegisterVar({
 	name = "cd_showhud",
 	defaultvalue = "On",
 	flags = 0,
 	PossibleValue = CV_OnOff
+})
+local CV_CDHudMaxPlayers = CV_RegisterVar({
+	name = "cd_hudmaxplayers",
+	defaultvalue = "12",
+	flags = 0,
+	PossibleValue = {MIN = 0, MAX = 32}
 })
 
 
@@ -162,222 +162,170 @@ local function AbsAngle(ang)
 	return ang
 end
 
---Destroys mobj and returns nil for assignment shorthand
-local function DestroyObj(mobj)
-	if mobj and mobj.valid
-		P_RemoveMobj(mobj)
-	end
-	return nil
-end
-
---P_CheckSight wrapper to approximate sight checks for objects above/below FOFs
---Eliminates being able to "see" targets through FOFs at extreme angles
-local function CheckSight(bmo, pmo)
-	return bmo.floorz < pmo.ceilingz
-		and bmo.ceilingz > pmo.floorz
-		and P_CheckSight(bmo, pmo)
-end
-
 
 
 --[[
 	--------------------------------------------------------------------------------
-	LEADER SETUP FUNCTIONS / CONSOLE COMMANDS
-	Any leader "setup" logic, including console commands
-	This is exactly like foxBot's stuff, but we swap out:
+	CDINFO SETUP FUNCTIONS / CONSOLE COMMANDS
+	Any CoopOrDie info "setup" logic, including console commands
+	This is a lot like foxBot's stuff, but we swap out:
 		"ai" struct for "cdinfo"
-		"ai_followers" struct for "cd_followers"
-		Console command names
+		"ai_followers" struct for "cd_pinnedplayers"
+		Function / console command names
 	--------------------------------------------------------------------------------
 ]]
---Reset (or define) all AI vars to their initial values
-local function ResetAI(ai)
-	ai.playernosight = 0 --How long the player has been out of view
-	ai.doteleport = false --AI is attempting to teleport
+--Reset (or define) all CDInfo vars to their initial values
+local function ResetCDInfo(ai)
 	ai.reborn = false --Just recently reborn from hitting end of level
 end
 
---Register follower with leader for lookup later
-local function RegisterFollower(leader, bot)
-	if not leader.cd_followers
-		leader.cd_followers = {}
+--Register pin with player for lookup later
+local function RegisterPinnedPlayer(player, pin)
+	if not player.cd_pinnedplayers
+		player.cd_pinnedplayers = {}
 	end
-	leader.cd_followers[#bot + 1] = bot
+	local retVal = player.cd_pinnedplayers[#pin + 1] == nil
+	player.cd_pinnedplayers[#pin + 1] = pin
+	return retVal
 end
 
---Unregister follower with leader
-local function UnregisterFollower(leader, bot)
-	if not (leader and leader.valid and leader.cd_followers)
+--Unregister pin with player
+local function UnregisterPinnedPlayer(player, pin)
+	if not (player and player.valid and player.cd_pinnedplayers)
 		return
 	end
-	leader.cd_followers[#bot + 1] = nil
-	if table.maxn(leader.cd_followers) < 1
-		leader.cd_followers = nil
+	local retVal = player.cd_pinnedplayers[#pin + 1] != nil
+	player.cd_pinnedplayers[#pin + 1] = nil
+	if table.maxn(player.cd_pinnedplayers) < 1
+		player.cd_pinnedplayers = nil
 	end
+	return retVal
 end
 
---Create AI table for a given player, if needed
-local function SetupAI(player)
+--Unregister all pins with player
+local function UnregisterAllPinnedPlayers(player)
+	if player.cd_pinnedplayers
+		for _, pin in pairs(player.cd_pinnedplayers)
+			UnregisterPinnedPlayer(player, pin)
+		end
+		return true
+	end
+	return false
+end
+
+--Create CDInfo table for a given player, if needed
+local function SetupCDInfo(player)
 	if player.cdinfo
 		return
 	end
 
-	--Create table, defining any vars that shouldn't be reset via ResetAI
+	--Create table, defining any vars that shouldn't be reset via ResetCDInfo
 	player.cdinfo = {
-		leader = nil, --Bot's leader
-		realleader = nil, --Bot's "real" leader (if temporarily following someone else)
-		lastrings = 0, --Last ring count of bot (used for end-of-level teleport)
-		lastxtralife = 0, --Last xtralife count of bot (also used for eol teleport)
-		lastlives = player.lives --Last life count of bot (used to sync w/ team)
+		lastrings = player.rings, --Last ring count of player (used for end-of-level teleport)
+		lastxtralife = player.xtralife, --Last xtralife count of player (also used for eol teleport)
+		lastlives = player.lives, --Last life count of player (used to sync w/ team)
+		huddrawn = false --Whether player was already drawn to coop HUD this frame (set by HUD hook)
 	}
-	ResetAI(player.cdinfo) --Define the rest w/ their respective values
+	ResetCDInfo(player.cdinfo) --Define the rest w/ their respective values
 end
 
---Destroy AI table (and any child tables / objects) for a given player, if needed
-local function DestroyAI(player)
+--Destroy CDInfo table (and any child tables / objects) for a given player, if needed
+local function DestroyCDInfo(player)
 	if not player.cdinfo
 		return
 	end
 
-	--Unregister ourself from our (real) leader if still valid
-	UnregisterFollower(player.cdinfo.realleader, player)
+	--Unregister all pinned players
+	UnregisterAllPinnedPlayers(player)
 
 	--My work here is done
 	player.cdinfo = nil
 	collectgarbage()
 end
 
---Get our "top" leader in a leader chain (if applicable)
---e.g. for A <- B <- D <- C, D's "top" leader is A
-local function GetTopLeader(bot, basebot)
-	if bot != basebot and bot.cdinfo
-	and bot.cdinfo.realleader and bot.cdinfo.realleader.valid
-		return GetTopLeader(bot.cdinfo.realleader, basebot)
-	end
-	return bot
-end
-
---List all bots, optionally excluding bots led by leader
-local function SubListBots(player, leader, bot, level)
-	if bot == leader
-		return 0
-	end
-	local msg = #bot .. " - " .. bot.name
-	for i = 0, level
-		msg = " " .. $
-	end
-	if bot.ai
-		if bot.ai.cmd_time
-			msg = $ .. " \x81(player-controlled)"
-		end
-		if bot.ai.ronin
-			msg = $ .. " \x83(disconnected)"
-		end
-	else
-		msg = $ .. " \x84(player)"
-	end
-	if bot.spectator
-		msg = $ .. " \x87(KO'd)"
-	end
-	if bot.quittime
-		msg = $ .. " \x86(disconnecting)"
-	end
-	CONS_Printf(player, msg)
-	local count = 1
-	if bot.cd_followers
-		for _, b in pairs(bot.cd_followers)
-			count = $ + SubListBots(player, leader, b, level + 1)
-		end
-	end
-	return count
-end
-local function ListBots(player, leader)
-	if leader != nil
-		leader = ResolvePlayerByNum(leader)
-		if leader and leader.valid
-			CONS_Printf(player, "\x84 Excluding players/bots led by " .. leader.name)
-		end
-	end
+--List all players, possible including pins only
+local function ListPlayers(player)
 	local count = 0
 	for p in players.iterate
-		if not (p.cdinfo and p.cdinfo.realleader)
-			count = $ + SubListBots(player, leader, p, 0)
+		local msg = " " .. #p .. " - " .. p.name
+		if player.cd_pinnedplayers
+			for _, pin in pairs(player.cd_pinnedplayers)
+				if pin == p
+					msg = $ .. " \x81(pinned)"
+					break
+				end
+			end
 		end
+		if p == player
+			msg = $ .. " \x8A(you)"
+		end
+		CONS_Printf(player, msg)
+		count = $ + 1
 	end
 	CONS_Printf(player, "Returned " .. count .. " nodes")
 end
-COM_AddCommand("LISTPLAYERS", ListBots, COM_LOCAL)
+COM_AddCommand("LISTPLAYERS", ListPlayers, COM_LOCAL)
 
---Set player as a bot following a particular leader
---Internal/Admin-only: Optionally specify some other player/bot to follow leader
-local function SetBot(player, leader, bot)
-	local pbot = player
-	if bot != nil --Must check nil as 0 is valid
-		pbot = ResolvePlayerByNum(bot)
-	end
-	if not (pbot and pbot.valid)
-		CONS_Printf(player, "Invalid bot! Please specify a bot by number:")
-		ListBots(player)
-		return
-	end
-
-	--Make sure we won't end up following ourself
-	local pleader = ResolvePlayerByNum(leader)
-	if pleader and pleader.valid
-	and GetTopLeader(pleader, pbot) == pbot
-		CONS_Printf(player, pbot.name + " would end up following itself! Please try a different leader:")
-		ListBots(player, #pbot)
-		return
-	end
-
-	--Set up our AI (if needed) and figure out leader
-	SetupAI(pbot)
-	if pleader and pleader.valid
-		CONS_Printf(player, "Tethering to " + pleader.name)
-		if player != pbot
-			CONS_Printf(pbot, player.name + " tethered " + pbot.name + " to " + pleader.name)
-		end
-	elseif pbot.cdinfo.realleader and pbot.cdinfo.realleader.valid
-		CONS_Printf(player, "Untethering from " + pbot.cdinfo.realleader.name)
-		if player != pbot
-			CONS_Printf(pbot, player.name + " untethering " + pbot.name + " from " + pbot.cdinfo.realleader.name)
-		end
-	else
-		CONS_Printf(player, "Invalid leader! Please specify a leader by number:")
-		ListBots(player, #pbot)
-	end
-
-	--Valid leader?
-	if pleader and pleader.valid
-		--Unregister ourself from our old (real) leader (if applicable)
-		UnregisterFollower(pbot.cdinfo.realleader, pbot)
-
-		--Set the new leader
-		pbot.cdinfo.leader = pleader
-		pbot.cdinfo.realleader = pleader
-
-		--Register ourself as a follower
-		RegisterFollower(pleader, pbot)
-	else
-		--Destroy AI if no leader set
-		DestroyAI(pbot)
-	end
-
-	--If we're a foxBot, update our AI leader as well
-	if pbot.ai
-		if bot != nil --Only setleadera can pass this arg
-			COM_BufInsertText(player, "SETBOTA " + leader + " " + bot)
+--Pin a particular player to the coop hud
+local function PinPlayer(player, pin)
+	--Make sure we're valid / won't end up pinning ourself
+	local pin = ResolvePlayerByNum(pin)
+	if not (pin and pin.valid) or pin == player
+		if pin == player
+			CONS_Printf(player, "You can't pin yourself! Please try a different player:")
 		else
-			COM_BufInsertText(player, "SETBOT " + leader)
+			CONS_Printf(player, "Invalid player! Please specify a player by number:")
 		end
+		ListPlayers(player)
+		return
+	end
+
+	--Pin that player!
+	if RegisterPinnedPlayer(player, pin)
+		CONS_Printf(player, "Pinning " .. pin.name)
+	else
+		CONS_Printf(player, "Already pinned " .. pin.name .. "!")
 	end
 end
-COM_AddCommand("SETLEADERA", SetBot, COM_ADMIN)
-COM_AddCommand("SETLEADER", function(player, leader)
-	SetBot(player, leader)
-end, 0)
+COM_AddCommand("PINPLAYER", PinPlayer, 0)
 
---Debug command for printing out AI objects
+--Unpin a particular player from the coop hud
+local function UnpinPlayer(player, pin)
+	--Make sure we have pins!
+	if not player.cd_pinnedplayers
+		CONS_Printf(player, "You don't have any pinned players!")
+		return
+	end
+
+	--Support "all" argument
+	if string.lower(pin) == "all"
+	and UnregisterAllPinnedPlayers(player)
+		CONS_Printf(player, "Unpinning all players")
+		return
+	end
+
+	--Make sure we're valid / won't end up unpinning ourself
+	local pin = ResolvePlayerByNum(pin)
+	if not (pin and pin.valid) or pin == player
+		if pin == player
+			CONS_Printf(player, "You can't unpin yourself! Please try a different player:")
+		else
+			CONS_Printf(player, "Invalid player! Please specify a player by number:")
+		end
+		ListPlayers(player)
+		return
+	end
+
+	--Unpin that player!
+	if UnregisterPinnedPlayer(player, pin)
+		CONS_Printf(player, "Unpinning " .. pin.name)
+	else
+		CONS_Printf(player, "Already unpinned " .. pin.name .. "!")
+	end
+end
+COM_AddCommand("UNPINPLAYER", UnpinPlayer, 0)
+
+--Debug command for printing out CDInfo objects
 COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 	bot = ResolvePlayerByNum(bot)
 	if not (bot and bot.valid and bot.cdinfo)
@@ -389,105 +337,6 @@ COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 end, COM_LOCAL)
 
 
-
---[[
-	--------------------------------------------------------------------------------
-	LEADER LOGIC
-	Actual leader-related behavior etc.
-	This is exactly like foxBot's stuff
-	--------------------------------------------------------------------------------
-]]
---Teleport a bot to leader, optionally fading out
-local function Teleport(bot, fadeout)
-	if not (bot.valid and bot.cdinfo)
-	or bot.exiting or (bot.pflags & PF_FULLSTASIS) --Whoops
-		--Consider teleport "successful" on fatal errors for cleanup
-		return true
-	end
-
-	--Make sure everything's valid (as this is also called on respawn)
-	--Check leveltime to only teleport after we've initially spawned in
-	local leader = bot.cdinfo.leader
-	if not (leveltime and leader and leader.valid)
-	or leader.spectator --Don't teleport to spectators
-		return true
-	end
-	local bmo = bot.realmo
-	local pmo = leader.realmo
-	if not (bmo and bmo.valid and pmo and pmo.valid)
-	or pmo.health <= 0 --Don't teleport to dead leader!
-		return true
-	end
-
-	--Leader in a zoom tube or other scripted vehicle?
-	if leader.powers[pw_carry] == CR_NIGHTSMODE
-	or leader.powers[pw_carry] == CR_ZOOMTUBE
-	or leader.powers[pw_carry] == CR_MINECART
-	or bot.powers[pw_carry] == CR_MINECART
-		return true
-	end
-
-	--Teleport override?
-	if CV_CDTeleMode.value
-		--Probably successful if we're not in a panic and can see leader
-		return not bot.cdinfo.playernosight
-	end
-
-	--Fade out (if needed), teleporting after
-	if not fadeout
-		bot.powers[pw_flashing] = TICRATE / 2 --Skip the fadeout time
-	elseif not bot.powers[pw_flashing]
-	or bot.powers[pw_flashing] > TICRATE
-		bot.powers[pw_flashing] = TICRATE
-	end
-	if bot.powers[pw_flashing] > TICRATE / 2
-		return false
-	end
-
-	--Adapted from 2.2 b_bot.c
-	local z = pmo.z
-	local zoff = pmo.height + 128 * pmo.scale
-	if pmo.eflags & MFE_VERTICALFLIP
-		z = max(z - zoff, pmo.floorz + pmo.height)
-	else
-		z = min(z + zoff, pmo.ceilingz - pmo.height)
-	end
-	bmo.flags2 = $
-		& ~MF2_OBJECTFLIP | (pmo.flags2 & MF2_OBJECTFLIP)
-		& ~MF2_TWOD | (pmo.flags2 & MF2_TWOD)
-	bmo.eflags = $
-		& ~MFE_VERTICALFLIP | (pmo.eflags & MFE_VERTICALFLIP)
-		& ~MFE_UNDERWATER | (pmo.eflags & MFE_UNDERWATER)
-	--bot.powers[pw_underwater] = leader.powers[pw_underwater] --Don't sync water/space time
-	--bot.powers[pw_spacetime] = leader.powers[pw_spacetime]
-	bot.powers[pw_gravityboots] = leader.powers[pw_gravityboots]
-	bot.powers[pw_nocontrol] = leader.powers[pw_nocontrol]
-
-	P_ResetPlayer(bot)
-	bmo.state = S_PLAY_JUMP --Looks/feels nicer
-	bot.pflags = $ | P_GetJumpFlags(bot)
-
-	--Average our momentum w/ leader's - 1/4 ours, 3/4 theirs
-	bmo.momx = $ / 4 + pmo.momx * 3/4
-	bmo.momy = $ / 4 + pmo.momy * 3/4
-	bmo.momz = $ / 4 + pmo.momz * 3/4
-
-	--Zero momy in 2D mode (oops)
-	if bmo.flags2 & MF2_TWOD
-		bmo.momy = 0
-	end
-
-	P_TeleportMove(bmo, pmo.x, pmo.y, z)
-	P_SetScale(bmo, pmo.scale)
-	bmo.destscale = pmo.destscale
-	bmo.angle = pmo.angle
-
-	--Fade in (if needed)
-	if bot.powers[pw_flashing] < TICRATE / 2
-		bot.powers[pw_flashing] = TICRATE / 2
-	end
-	return true
-end
 
 --[[
 	--------------------------------------------------------------------------------
@@ -556,167 +405,62 @@ mobjthinkerfunc[2] = function(mobj) --MobjThinkForSphere
 	end
 end
 
---Drive players based on whatever unholy mess is in this function
---Note that "bot" and "bai" are misnomers, but renames weren't necessary
-local function PreThinkFrameFor(bot)
-	if not bot.valid
+--Think for players!
+local function PreThinkFrameFor(player)
+	if not player.valid
 		return
 	end
 
-	--CD: Make sure we have a proper CoopOrDie info
-	if not bot.cdinfo
-		SetupAI(bot)
+	--Make sure we have a proper CoopOrDie info
+	if not player.cdinfo
+		SetupCDInfo(player)
 	end
-	local bai = bot.cdinfo
+	local pci = player.cdinfo
 
-	--CD: Handle lives here
-	if bot.lives > 0
-	and bai.lastlives > 0
-	and not (bot.ai and bot.ai.synclives)
-		if bot.lives != bai.lastlives
-			teamlives = bot.lives
-		elseif teamlives > bot.lives
-			if leveltime
-				P_PlayLivesJingle(bot)
+	--Handle lives here
+	if player.lives > 0
+	and pci.lastlives > 0
+	and not (player.ai and player.ai.synclives)
+		if player.lives != pci.lastlives
+			teamlives = player.lives
+		elseif teamlives > player.lives
+			if leveltime and player.jointime > 2
+				P_PlayLivesJingle(player)
 			end
-			P_GivePlayerLives(bot, teamlives - bot.lives)
+			P_GivePlayerLives(player, teamlives - player.lives)
 		else
-			bot.lives = teamlives
+			player.lives = teamlives
 		end
 	end
-	bai.lastlives = bot.lives
+	pci.lastlives = player.lives
 
-	--CD: Handle exiting here
-	if (bot.pflags & PF_FINISHED)
+	--Handle exiting here
+	if (player.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
-		bai.lastrings = bot.rings
-		bai.lastxtralife = bot.xtralife
-		bot.starpostnum = 0
-		bot.starposttime = 0
-		bot.pflags = $ & ~PF_FINISHED
-		bot.playerstate = PST_REBORN
-		bai.reborn = true
+		pci.lastrings = player.rings
+		pci.lastxtralife = player.xtralife
+		player.starpostnum = 0
+		player.starposttime = 0
+		player.pflags = $ & ~PF_FINISHED
+		player.playerstate = PST_REBORN
+		pci.reborn = true
 		return
 	end
-	if bai.reborn
-		bai.reborn = false
-		if not (bot.ai and bot.ai.syncrings)
-			bot.rings = bai.lastrings
-			bot.xtralife = bai.lastxtralife
+	if pci.reborn
+		pci.reborn = false
+		if not (player.ai and player.ai.syncrings)
+			player.rings = pci.lastrings
+			player.xtralife = pci.lastxtralife
 		end
-		S_StartSound(bmo, sfx_mixup)
-		P_FlashPal(bot, PAL_MIXUP, TICRATE / 4)
-	end
-
-	--CD: Derp
-	local leader = nil
-
-	--CD: Just use same leader as foxBot if we're a bot
-	if bot.ai
-		bai.leader = bot.ai.leader
-		bai.realleader = bot.ai.realleader
-
-		--CD: Derp
-		leader = bai.leader
-	--CD: Otherwise...
-	else
-		--Bail here if no (real) leader
-		--(unlike foxBot's ai struct, we may validly have a cdinfo w/ no realleader)
-		if not bai.realleader
-			return
+		if player.realmo and player.realmo.valid
+			S_StartSound(player.realmo, sfx_mixup)
 		end
-
-		--Find a new leader if ours quit
-		if not (bai.leader and bai.leader.valid)
-			--Reset to realleader if we have one
-			if bai and bai.leader != bai.realleader
-			and bai.realleader and bai.realleader.valid
-				bai.leader = bai.realleader
-				return
-			end
-			--CD: Otherwise don't bother
-			--(foxBot will maintain its own valid leader if necessary)
-			return
-		end
-
-		--CD: Derp
-		leader = bai.leader
-
-		--Reset leader to realleader if it's no longer valid or spectating
-		--(we'll naturally find a better leader above if it's no longer valid)
-		if leader != bai.realleader
-		and (
-			not (bai.realleader and bai.realleader.valid)
-			or not bai.realleader.spectator
-		)
-			bai.leader = bai.realleader
-			return
-		end
-
-		--Is leader spectating? Temporarily follow leader's leader
-		if leader.spectator
-		and leader.cdinfo
-		and leader.cdinfo.leader
-		and leader.cdinfo.leader.valid
-		and GetTopLeader(leader.cdinfo.leader, leader) != leader
-			bai.leader = leader.cdinfo.leader
-			return
-		end
-	end
-
-	--****
-	--VARS (Player or AI)
-	local bmo = bot.realmo
-	local pmo = leader.realmo
-	local cmd = bot.cmd
-	if not (bmo and bmo.valid and pmo and pmo.valid)
-		return
-	end
-
-	--Elements
-	local flip = 1
-	if bmo.eflags & MFE_VERTICALFLIP
-		flip = -1
-	end
-	local scale = bmo.scale
-
-	--Measurements
-	local dist = R_PointToDist2(bmo.x, bmo.y, pmo.x, pmo.y)
-	local zdist = FixedMul(pmo.z - bmo.z, scale * flip)
-
-	--Check line of sight to player
-	if CheckSight(bmo, pmo)
-	and FixedHypot(dist, zdist) < 2048 * scale --CD: Add dist check here
-		bai.playernosight = 0
-	else
-		bai.playernosight = $ + 1
-	end
-
-	--Check leader's teleport status
-	if leader.cdinfo
-		bai.playernosight = max($, leader.cdinfo.playernosight - TICRATE / 2)
-	end
-
-	--And teleport if necessary
-	bai.doteleport = bai.playernosight > 3 * TICRATE
-	if bai.doteleport and Teleport(bot, true)
-		--Post-teleport cleanup
-		bai.doteleport = false
-		bai.playernosight = 0
-		if bot.ai
-			bot.ai.anxiety = 0
-			bot.ai.panic = 0
-		end
-	end
-
-	--Teleport override?
-	if bai.doteleport and CV_CDTeleMode.value > 0
-		cmd.buttons = $ | CV_CDTeleMode.value
+		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
 	end
 end
 
 --Build hudtext for a particular player
-local function BuildHudFor(v, stplyr, cam, player, i)
+local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	--Ring hud!
 	local rcolor = "\x82"
 	if player.rings <= 0
@@ -725,10 +469,8 @@ local function BuildHudFor(v, stplyr, cam, player, i)
 	end
 	hudtext[i] = rcolor .. "Rings \x80" .. player.rings
 	hudtext[i + 1] = player.name
-	if player == stplyr.cdinfo.leader
-		hudtext[i + 1] = "\x83" .. $
-	elseif player == stplyr.cdinfo.realleader
-		hudtext[i + 1] = "\x87" .. $
+	if namecolor
+		hudtext[i + 1] = namecolor .. $
 	end
 
 	--Spectating or dead?
@@ -792,11 +534,13 @@ local function BuildHudFor(v, stplyr, cam, player, i)
 		end
 		hudtext[i + 3] = dir
 
-		if player == stplyr.cdinfo.leader
-			if stplyr.cdinfo.playernosight
+		--Keep simple foxBot concepts in case player prefers only this hud
+		if stplyr.ai
+		and player == stplyr.ai.leader
+			if stplyr.ai.playernosight
 				hudtext[i + 2] = "\x87" .. $
 			end
-			if stplyr.cdinfo.doteleport
+			if stplyr.ai.doteleport
 				hudtext[i + 3] = "\x84Teleporting..."
 			end
 		end
@@ -812,7 +556,7 @@ end
 	Define all hooks used to actually interact w/ the game
 	--------------------------------------------------------------------------------
 ]]
---Tic? Tock! Call PreThinkFrameFor bot
+--Tic? Tock! Call thinker functions for players and any registered mobjthinkers
 addHook("PreThinkFrame", function()
 	for player in players.iterate
 		PreThinkFrameFor(player)
@@ -824,7 +568,10 @@ addHook("PreThinkFrame", function()
 	--Handle anything required for (re)joining clients
 	--Note that consoleplayer is server for a few tics on new clients
 	--Thus, newclient never gets unset on the server itself, but that's ok
-	if newclient and consoleplayer != server
+	if newclient
+	and consoleplayer != server
+	and consoleplayer
+	and consoleplayer.valid
 		newclient = false
 
 		--Fix grey enemies for mid-game joiners
@@ -840,7 +587,7 @@ end)
 addHook("MapChange", function(mapnum)
 	for player in players.iterate
 		if player.cdinfo
-			ResetAI(player.cdinfo)
+			ResetCDInfo(player.cdinfo)
 		end
 	end
 
@@ -851,6 +598,7 @@ addHook("MapChange", function(mapnum)
 
 	--Reset mobjthinkers
 	mobjthinkers = {}
+	collectgarbage()
 
 	--Reset lives if exhausted
 	teamlives = max($, 4)
@@ -1046,18 +794,10 @@ addHook("TouchSpecial", function(special, toucher)
 	end
 end, MT_BLUESPHERE)
 
---Handle (re)spawning for bots
-addHook("PlayerSpawn", function(player)
-	if player.cdinfo
-		--Engage!
-		Teleport(player)
-	end
-end)
-
---Handle sudden quitting for bots
+--Handle sudden quitting for players
 addHook("PlayerQuit", function(player, reason)
 	if player.cdinfo
-		DestroyAI(player)
+		DestroyCDInfo(player)
 	end
 end)
 
@@ -1065,13 +805,13 @@ end)
 hud.add(function(v, stplyr, cam)
 	--If not previous text in buffer... (e.g. debug)
 	if hudtext[1] == nil
-		--And we're not a bot...
+		--And we don't want a hud...
 		if stplyr.cdinfo == nil
 		or CV_CDShowHud.value == 0
 			return
 		end
 
-		--Otherwise generate a simple bot hud
+		--Otherwise generate a simple coop hud
 		local i = 100
 		if targetenemyct > 0
 			i = enemyct * 100 / targetenemyct
@@ -1090,33 +830,53 @@ hud.add(function(v, stplyr, cam)
 			hudtext[1] = "\x83" .. "Done!"
 		end
 
-		--Put leader up top
+		--Put AI leader up top if using foxBot
 		i = 3
-		if stplyr.cdinfo.leader
-		and stplyr.cdinfo.leader.valid
-			i = BuildHudFor(v, stplyr, cam, stplyr.cdinfo.leader, i)
+		if stplyr.ai
+		and stplyr.ai.leader
+		and stplyr.ai.leader.valid
+		and stplyr.ai.leader.cdinfo
+			i = BuildHudFor(v, stplyr, cam, stplyr.ai.leader, i, "\x83")
+			stplyr.ai.leader.cdinfo.huddrawn = true
 
 			--And realleader right below if different (e.g. dead)
-			if stplyr.cdinfo.realleader != stplyr.cdinfo.leader
-			and stplyr.cdinfo.realleader
-			and stplyr.cdinfo.realleader.valid
-				i = BuildHudFor(v, stplyr, cam, stplyr.cdinfo.realleader, i)
+			if stplyr.ai.realleader != stplyr.ai.leader
+			and stplyr.ai.realleader
+			and stplyr.ai.realleader.valid
+			and stplyr.ai.realleader.cdinfo
+				i = BuildHudFor(v, stplyr, cam, stplyr.ai.realleader, i, "\x87")
+				stplyr.ai.realleader.cdinfo.huddrawn = true
+			end
+		end
+
+		--Put any pinned players after
+		if stplyr.cd_pinnedplayers
+			for _, pin in pairs(stplyr.cd_pinnedplayers)
+				if pin.valid
+				and pin.cdinfo
+				and not pin.cdinfo.huddrawn
+					i = BuildHudFor(v, stplyr, cam, pin, i, "\x81")
+					pin.cdinfo.huddrawn = true
+				end
 			end
 		end
 
 		--Draw rest of players
+		local hudmax = CV_CDHudMaxPlayers.value
 		for player in players.iterate
-			if player != stplyr
-			and player != stplyr.cdinfo.leader
-			and player != stplyr.cdinfo.realleader
-			and player.mo and player.mo.valid --Infers not spectator.. for now
-			and player.mo.health > 0
-				i = BuildHudFor(v, stplyr, cam, player, i)
-			end
+			if player.cdinfo
+				if player != stplyr
+				and not player.cdinfo.huddrawn
+				and player.mo and player.mo.valid --Infers not spectator.. for now
+				and player.mo.health > 0
+					i = BuildHudFor(v, stplyr, cam, player, i)
+				end
+				player.cdinfo.huddrawn = false
 
-			--Stop after 12 players
-			if i > 50 --12 players * 4 hudtext each + 2 for enemyct
-				break
+				--Stop after cd_hudmaxplayers
+				if i > hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
+					break
+				end
 			end
 		end
 	end
@@ -1162,7 +922,7 @@ hud.add(function(v, stplyr, cam)
 				y = $ + 2 * scale
 
 				--Wrap to another column if needed
-				if (k + 2) % 64 == 0 --16 players * 4 hudtext each
+				if (k + 2) % (68 / scale) == 0 --17 players * 4 hudtext each
 					x = $ + 64 * scale
 					y = $ - 160 * scale --Honor splitscreen etc.
 				end
@@ -1188,13 +948,13 @@ local function BotHelp(player)
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
 		"\x80  cd_enemyclearmax - Maximum # of enemies for level completion",
 		"\x80  cd_resettagsondeath - Reset players' enemy tags on death?",
-		"\x80  cd_telemode - Override teleport behavior w/ button press?",
-		"\x86   (64 = fire, 1024 = toss flag, 4096 = alt fire, etc.)",
 		"",
 		"\x87 MP Client:",
 		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",
-		"\x80  setleader <leader> - Follow <leader> by number \x86(-1 = stop)",
-		"\x80  listplayers - List active bots and players"
+		"\x80  cd_hudmaxplayers - Maximum # of players to draw on HUD",
+		"\x80  pinplayer <player> - Pin <player> to HUD",
+		"\x80  unpinplayer <player> - Unpin <player> from HUD \x86(\"all\" = all players)",
+		"\x80  listplayers - List active players"
 	)
 	if not player
 		print(
