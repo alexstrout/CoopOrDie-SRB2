@@ -21,7 +21,7 @@
 	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 	SOFTWARE.
-	
+
 	--------------------------------------------------------------------------------
 	Extensively draws code from foxBot,
 	Copyright (c) 2021 Alex Strout and CobaltBW - MIT License
@@ -44,13 +44,13 @@ local CV_CDDebug = CV_RegisterVar({
 })
 local CV_CDEnemyClearPct = CV_RegisterVar({
 	name = "cd_enemyclearpct",
-	defaultvalue = "60",
+	defaultvalue = "50",
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = 100}
 })
 local CV_CDEnemyClearMax = CV_RegisterVar({
 	name = "cd_enemyclearmax",
-	defaultvalue = "200",
+	defaultvalue = "100",
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = UINT16_MAX}
 })
@@ -101,6 +101,7 @@ mobjinfo[MT_FOXCD_SCOREBOP] = {
 ]]
 --Team lives for sync
 local teamlives = 0
+local travellifeloss = false
 
 --Current percentage of enemies destroyed in stage
 local enemyct = 0
@@ -117,6 +118,7 @@ local newclient = false
 --NetVars!
 addHook("NetVars", function(network)
 	teamlives = network($)
+	travellifeloss = network($)
 	enemyct = network($)
 	targetenemyct = network($)
 	notifythreshold = network($)
@@ -124,10 +126,21 @@ addHook("NetVars", function(network)
 	newclient = true --Only set on server and joining client(s)
 end)
 
+--Sound to play this frame for teamlives-related noises
+local lifesfx = nil
+
 --Cache of mobjthinker functions for quick lookup later
 local mobjthinkerfunc = {}
 
 --Enemies ineligible for enemyct / targetenemyct
+--These are signified by not having damage mechanics applied
+--mobjinfo[MT_DETON].cd_skipcount = true
+--mobjinfo[MT_POINTY].cd_skipcount = true
+--mobjinfo[MT_EGGGUARD].cd_skipcount = true
+mobjinfo[MT_CANARIVORE].cd_skipcount = true
+mobjinfo[MT_PTERABYTE].cd_skipcount = true
+mobjinfo[MT_BIGMINE].cd_skipcount = true
+mobjinfo[MT_ROSY].cd_skipcount = true
 mobjinfo[MT_BUMBLEBORE].cd_skipcount = true
 mobjinfo[MT_FOXCD_SCOREBOP].cd_skipcount = true
 
@@ -177,6 +190,7 @@ end
 --Reset (or define) all CDInfo vars to their initial values
 local function ResetCDInfo(ai)
 	ai.reborn = false --Just recently reborn from hitting end of level
+	ai.needsrevive = false --Spectating after hitting 0 lives
 end
 
 --Register pin with player for lookup later
@@ -221,8 +235,9 @@ local function SetupCDInfo(player)
 
 	--Create table, defining any vars that shouldn't be reset via ResetCDInfo
 	player.cdinfo = {
-		lastrings = player.rings, --Last ring count of player (used for end-of-level teleport)
-		lastxtralife = player.xtralife, --Last xtralife count of player (also used for eol teleport)
+		lastrings = 0, --Last ring count of player (used for end-of-level teleport)
+		lastxtralife = 0, --Last xtralife count of player (also used for eol teleport)
+		lastshield = 0, --Last shield of player (also used for eol teleport)
 		lastlives = player.lives, --Last life count of player (used to sync w/ team)
 		huddrawn = false --Whether player was already drawn to coop HUD this frame (set by HUD hook)
 	}
@@ -235,8 +250,10 @@ local function DestroyCDInfo(player)
 		return
 	end
 
-	--Unregister all pinned players
-	UnregisterAllPinnedPlayers(player)
+	--Unregister us from all players' pinned players
+	for p in players.iterate
+		UnregisterPinnedPlayer(p, player)
+	end
 
 	--My work here is done
 	player.cdinfo = nil
@@ -298,7 +315,8 @@ local function UnpinPlayer(player, pin)
 	end
 
 	--Support "all" argument
-	if string.lower(pin) == "all"
+	if pin != nil
+	and string.lower(pin) == "all"
 	and UnregisterAllPinnedPlayers(player)
 		CONS_Printf(player, "Unpinning all players")
 		return
@@ -342,13 +360,6 @@ end, COM_LOCAL)
 	--------------------------------------------------------------------------------
 	COOP OR DIE LOGIC
 	Now we're getting into actual CD-specific stuff
-	PreThinkFrameFor is very similar to foxBot's, but we alter a few things:
-		All players have "cdinfo" structs, not just players following leaders
-		Lives are synced game-wide via teamlives
-		Added some logic to deny exiting if targetenemyct isn't met
-		Altered leader logic (mostly to sync w/ foxBot)
-		Additional range check added to bai.playernosight
-
 	--------------------------------------------------------------------------------
 ]]
 --Determine if we're a valid enemy for CD purposes
@@ -358,7 +369,7 @@ end
 
 --Set skincolor for target mobj based on source
 local function SetColorFor(mobj, source)
-	if source
+	if source and source.player
 		if source.player == consoleplayer
 			if splitscreen
 				mobj.color = SKINCOLOR_AZURE
@@ -424,21 +435,38 @@ local function PreThinkFrameFor(player)
 		if player.lives != pci.lastlives
 			teamlives = player.lives
 		elseif teamlives > player.lives
-			if leveltime and player.jointime > 2
-				P_PlayLivesJingle(player)
-			end
-			P_GivePlayerLives(player, teamlives - player.lives)
-		else
-			player.lives = teamlives
+		and leveltime and player.jointime > 2
+		and not lifesfx --Revive sound takes priority
+			--P_PlayLivesJingle(player)
+			lifesfx = sfx_3db09
 		end
+		player.lives = teamlives
 	end
 	pci.lastlives = player.lives
+
+	--Handle revives
+	if player.spectator
+	and (player.lives < 1 or pci.needsrevive)
+		if teamlives <= 1
+			pci.needsrevive = true
+		else
+			teamlives = $ - 1
+			pci.needsrevive = false
+			player.lives = teamlives
+			player.spectator = false
+			player.playerstate = PST_REBORN
+			lifesfx = sfx_marioa --Takes priority over other lifesfx
+		end
+	else
+		pci.needsrevive = false
+	end
 
 	--Handle exiting here
 	if (player.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
 		pci.lastrings = player.rings
 		pci.lastxtralife = player.xtralife
+		pci.lastshield = player.powers[pw_shield]
 		player.starpostnum = 0
 		player.starposttime = 0
 		player.pflags = $ & ~PF_FINISHED
@@ -451,6 +479,24 @@ local function PreThinkFrameFor(player)
 		if not (player.ai and player.ai.syncrings)
 			player.rings = pci.lastrings
 			player.xtralife = pci.lastxtralife
+		end
+		if pci.lastshield & SH_NOSTACK
+			P_SwitchShield(player, pci.lastshield)
+		else
+			local shieldchoices = {
+				SH_ARMAGEDDON,
+				SH_ELEMENTAL,
+				SH_ATTRACT,
+				SH_FLAMEAURA,
+				SH_BUBBLEWRAP,
+				SH_THUNDERCOIN,
+				SH_PITY | SH_FIREFLOWER
+			}
+			local i = P_RandomKey(table.maxn(shieldchoices)) + 1
+			P_SwitchShield(player, shieldchoices[i])
+			if player.realmo and player.realmo.valid
+				S_StartSound(player.realmo, sfx_shield)
+			end
 		end
 		if player.realmo and player.realmo.valid
 			S_StartSound(player.realmo, sfx_mixup)
@@ -565,6 +611,12 @@ addHook("PreThinkFrame", function()
 		mobjthinkerfunc[v_func](k_mobj)
 	end
 
+	--Play any lifesfx set for this frame
+	if lifesfx
+		S_StartSound(nil, lifesfx, consoleplayer)
+		lifesfx = nil
+	end
+
 	--Handle anything required for (re)joining clients
 	--Note that consoleplayer is server for a few tics on new clients
 	--Thus, newclient never gets unset on the server itself, but that's ok
@@ -606,10 +658,22 @@ end)
 
 --Handle MapLoad for post-load actions
 addHook("MapLoad", function(mapnum)
-	--Decrement lives! Oof
-	if not G_IsSpecialStage()
+	if G_IsSpecialStage()
+		--Tighten special stage time!
+		local count = 0
 		for player in players.iterate
-			teamlives = max($ - 1, 1)
+			count = $ + 1
+		end
+		for player in players.iterate
+			player.nightstime = max($ * 2 / max(count, 2), 30 * TICRATE)
+		end
+	else
+		--Decrement lives! Oof
+		for player in players.iterate
+			travellifeloss = not $
+			if travellifeloss
+				teamlives = max($ - 1, 1)
+			end
 		end
 	end
 
@@ -618,7 +682,7 @@ addHook("MapLoad", function(mapnum)
 	for mobj in mobjs.iterate()
 		if ValidEnemy(mobj)
 		and not mobj.info.cd_skipcount
-			targetenemyct = $ + 1
+			targetenemyct = $ + mobj.info.spawnhealth
 
 			--Debug
 			if CV_CDDebug.value
@@ -628,7 +692,8 @@ addHook("MapLoad", function(mapnum)
 		end
 	end
 	targetenemyct = min(
-		$ * CV_CDEnemyClearPct.value / 100,
+		--40% of 1 enemy is still 1 enemy!
+		FixedCeil($ * FRACUNIT * CV_CDEnemyClearPct.value / 100) / FRACUNIT,
 		CV_CDEnemyClearMax.value
 	)
 end)
@@ -651,10 +716,19 @@ end)
 addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 	if target.cd_active
 	and source and source.valid
+	and not (
+		--Skip damage mechanics on non-eligible enemies
+		target.info.cd_skipcount
+		--Nukes and other big explosions also instantly deal real damage
+		or damagetype == DMG_NUKE
+		or (damagetype & (DMG_CANHURTSELF | DMG_DEATHMASK))
+	)
 		if not target.cd_lastattacker
-			target.cd_lastattacker = {}
-			target.cd_lastattacker.mo = source
-			target.cd_lastattacker.player = source.player
+			target.cd_lastattacker = {
+				mo = source,
+				--Use non-nil fallback for comparison purposes later
+				player = source.player or {}
+			}
 
 			--Handle colorization
 			target.colorized = true
@@ -675,8 +749,8 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 		elseif target.cd_lastattacker.mo == source
 		or target.cd_lastattacker.player == source.player
 			--Merp
-			if not target.cd_frettime
-			and inflictor and inflictor.player
+			if inflictor
+			and not target.cd_frettime
 				mobjthinkers[target] = 1
 				target.cd_frettime = TICRATE / 2
 				S_StartSound(target, sfx_s3k7b)
@@ -695,8 +769,14 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 						target.flags2 = $ | MF2_FRET
 					end
 					if target.cd_merpcount <= 0
-						S_StartSound(inflictor, sfx_shldls)
-						P_DoPlayerPain(inflictor.player, target, target)
+						--Player or player-like buddy object :)
+						if inflictor.player
+							S_StartSound(inflictor, sfx_shldls)
+							P_DoPlayerPain(inflictor.player, target, target)
+						elseif inflictor.info.spawnstate == mobjinfo[MT_PLAYER].spawnstate
+							S_StartSound(inflictor, sfx_shldls)
+							inflictor.state = S_PLAY_PAIN
+						end
 						target.cd_merpcount = nil
 					end
 				end
@@ -727,19 +807,21 @@ local function HandleDeath(target, inflictor, source, damagetype)
 
 		--Increment enemy count!
 		if not target.info.cd_skipcount
-			enemyct = $ + 1
+			enemyct = $ + target.info.spawnhealth
 
-			--Make noises!
+			--Make noises! And revive players
 			if targetenemyct > 0
 			and consoleplayer.realmo
 			and consoleplayer.realmo.valid
 				if enemyct >= targetenemyct
-					S_StartSound(consoleplayer.realmo, sfx_ideya, consoleplayer)
+					S_StartSound(nil, sfx_ideya, consoleplayer)
 					targetenemyct = 0
+					teamlives = max($, 2)
 				elseif notifythreshold <= 75
 				and enemyct * 100 / targetenemyct >= notifythreshold
-					S_StartSound(consoleplayer.realmo, sfx_3db06, consoleplayer)
+					S_StartSound(nil, sfx_3db06, consoleplayer)
 					notifythreshold = 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
+					teamlives = max($, 2)
 				end
 			end
 		end
@@ -774,9 +856,11 @@ addHook("TouchSpecial", function(special, toucher)
 		return nil
 	end
 	if not special.cd_lastattacker
-		special.cd_lastattacker = {}
-		special.cd_lastattacker.mo = toucher
-		special.cd_lastattacker.player = toucher.player
+		special.cd_lastattacker = {
+			mo = toucher,
+			--Use non-nil fallback for comparison purposes later
+			player = toucher.player or {}
+		}
 
 		--Handle colorization
 		special.colorized = true
