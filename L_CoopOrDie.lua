@@ -628,7 +628,9 @@ addHook("PreThinkFrame", function()
 
 	--Play any lifesfx set for this frame
 	if lifesfx
-		S_StartSound(nil, lifesfx, consoleplayer)
+		if consoleplayer and consoleplayer.valid
+			S_StartSound(nil, lifesfx, consoleplayer)
+		end
 		lifesfx = nil
 	end
 
@@ -637,8 +639,6 @@ addHook("PreThinkFrame", function()
 	--Thus, newclient never gets unset on the server itself, but that's ok
 	if newclient
 	and consoleplayer != server
-	and consoleplayer
-	and consoleplayer.valid
 		newclient = false
 
 		--Fix grey enemies for mid-game joiners
@@ -826,17 +826,19 @@ local function HandleDeath(target, inflictor, source, damagetype)
 
 		--Make noises! And revive players
 		if targetenemyct > 0
-		and consoleplayer.realmo
-		and consoleplayer.realmo.valid
 			if enemyct >= targetenemyct
-				S_StartSound(nil, sfx_ideya, consoleplayer)
 				targetenemyct = 0
 				teamlives = max($, 2)
+				if consoleplayer and consoleplayer.valid
+					S_StartSound(nil, sfx_ideya, consoleplayer)
+				end
 			elseif notifythreshold <= 75
 			and enemyct * 100 / targetenemyct >= notifythreshold
-				S_StartSound(nil, sfx_3db06, consoleplayer)
 				notifythreshold = 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
 				teamlives = max($, 2)
+				if consoleplayer and consoleplayer.valid
+					S_StartSound(nil, sfx_3db06, consoleplayer)
+				end
 			end
 		end
 	end
