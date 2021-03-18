@@ -155,6 +155,9 @@ mobjinfo[MT_HIVEELEMENTAL].cd_aipriority = true
 --Text table used for HUD hook
 local hudtext = {}
 
+--Player already drawn to coop HUD this frame? (set by HUD hook)
+local huddrawn = {}
+
 --Resolve player by number (string or int)
 local function ResolvePlayerByNum(num)
 	if type(num) != "number"
@@ -238,8 +241,7 @@ local function SetupCDInfo(player)
 		lastrings = 0, --Last ring count of player (used for end-of-level teleport)
 		lastxtralife = 0, --Last xtralife count of player (also used for eol teleport)
 		lastshield = 0, --Last shield of player (also used for eol teleport)
-		lastlives = player.lives, --Last life count of player (used to sync w/ team)
-		huddrawn = false --Whether player was already drawn to coop HUD this frame (set by HUD hook)
+		lastlives = player.lives --Last life count of player (used to sync w/ team)
 	}
 	ResetCDInfo(player.cdinfo) --Define the rest w/ their respective values
 end
@@ -514,7 +516,11 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 		rcolor = "\x85"
 	end
 	hudtext[i] = rcolor .. "Rings \x80" .. player.rings
-	hudtext[i + 1] = player.name
+	if string.len(player.name) > 11
+		hudtext[i + 1] = string.sub(player.name, 0, 10) .. ".."
+	else
+		hudtext[i + 1] = player.name
+	end
 	if namecolor
 		hudtext[i + 1] = namecolor .. $
 	end
@@ -532,21 +538,21 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 
 	local bmo = stplyr.realmo
 	if bmo and bmo.valid
-		--Distance
-		local zdist = (pmo.z - bmo.z)
+		--Distance (pre-scaled for approximate drawing purposes - can get very large)
+		local zdist = (pmo.z - bmo.z) / bmo.scale
 		local dist = FixedHypot(
 			R_PointToDist2(
 				bmo.x, bmo.y,
 				pmo.x, pmo.y
-			),
+			) / bmo.scale,
 			zdist
 		)
 		hudtext[i + 2] = "Dist "
-		if dist > 9999 * bmo.scale
+		if dist > 99999
 		or dist < 0
 			hudtext[i + 2] = $ .. "Far.."
 		else
-			hudtext[i + 2] = $ .. dist / bmo.scale
+			hudtext[i + 2] = $ .. dist / 100
 		end
 
 		--Angle (note angleturn is converted to angle by constant of 16, not FRACBITS)
@@ -557,7 +563,9 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 			)
 
 		local dir = nil
-		if AbsAngle(angle) > ANGLE_135
+		if dist <= 256
+			dir = " "
+		elseif AbsAngle(angle) > ANGLE_135
 			dir = "v"
 		elseif AbsAngle(angle) > ANGLE_45
 			if angle < 0
@@ -568,9 +576,9 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 		else
 			dir = "^"
 		end
-		if abs(zdist) > 256 * bmo.scale
+		if abs(zdist) > 256
 			if dist - abs(zdist) < dist / 8
-				dir = "*"
+				dir = " "
 			end
 			if zdist < 0
 				dir = "-" .. $
@@ -890,8 +898,7 @@ hud.add(function(v, stplyr, cam)
 	--If not previous text in buffer... (e.g. debug)
 	if hudtext[1] == nil
 		--And we don't want a hud...
-		if stplyr.cdinfo == nil
-		or CV_CDShowHud.value == 0
+		if CV_CDShowHud.value == 0
 			return
 		end
 
@@ -919,17 +926,15 @@ hud.add(function(v, stplyr, cam)
 		if stplyr.ai
 		and stplyr.ai.leader
 		and stplyr.ai.leader.valid
-		and stplyr.ai.leader.cdinfo
 			i = BuildHudFor(v, stplyr, cam, stplyr.ai.leader, i, "\x83")
-			stplyr.ai.leader.cdinfo.huddrawn = true
+			huddrawn[#stplyr.ai.leader] = true
 
 			--And realleader right below if different (e.g. dead)
 			if stplyr.ai.realleader != stplyr.ai.leader
 			and stplyr.ai.realleader
 			and stplyr.ai.realleader.valid
-			and stplyr.ai.realleader.cdinfo
 				i = BuildHudFor(v, stplyr, cam, stplyr.ai.realleader, i, "\x87")
-				stplyr.ai.realleader.cdinfo.huddrawn = true
+				huddrawn[#stplyr.ai.realleader] = true
 			end
 		end
 
@@ -937,10 +942,9 @@ hud.add(function(v, stplyr, cam)
 		if stplyr.cd_pinnedplayers
 			for _, pin in pairs(stplyr.cd_pinnedplayers)
 				if pin.valid
-				and pin.cdinfo
-				and not pin.cdinfo.huddrawn
+				and not huddrawn[#pin]
 					i = BuildHudFor(v, stplyr, cam, pin, i, "\x81")
-					pin.cdinfo.huddrawn = true
+					huddrawn[#pin] = true
 				end
 			end
 		end
@@ -948,20 +952,18 @@ hud.add(function(v, stplyr, cam)
 		--Draw rest of players
 		local hudmax = CV_CDHudMaxPlayers.value
 		for player in players.iterate
-			if player.cdinfo
-				if player != stplyr
-				and not player.cdinfo.huddrawn
-				and player.mo and player.mo.valid --Infers not spectator.. for now
-				and player.mo.health > 0
-					i = BuildHudFor(v, stplyr, cam, player, i)
-				end
-				player.cdinfo.huddrawn = false
-
-				--Stop after cd_hudmaxplayers
-				if i > hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
-					break
-				end
+			--Stop after cd_hudmaxplayers
+			if i > hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
+				break
 			end
+
+			if player != stplyr
+			and not huddrawn[#player]
+			and player.mo and player.mo.valid --Infers not spectator.. for now
+			and player.mo.health > 0
+				i = BuildHudFor(v, stplyr, cam, player, i)
+			end
+			huddrawn[#player] = false
 		end
 	end
 
@@ -994,11 +996,19 @@ hud.add(function(v, stplyr, cam)
 	end
 
 	--Draw! Flushing hudtext after
+	--This is messy and made more sense in foxBot, but oh well
 	for k, s in ipairs(hudtext)
 		if k & 1
-			v.drawString(320 - x - 30 * scale, y, s, V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size)
+			v.drawString(320 - x - 30 * scale, y, s,
+				V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size)
 		else
-			v.drawString(320 - x - 34 * scale, y, s, V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size_r)
+			if k > 2 and (k + 2) % 4 == 0 --Direction indicator
+				v.drawString(320 - x - 34 * scale, y, s,
+					V_SNAPTOTOP | V_SNAPTORIGHT | V_MONOSPACE | V_ALLOWLOWERCASE | v.localTransFlag(), size_r)
+			else
+				v.drawString(320 - x - 34 * scale, y, s,
+					V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size_r)
+			end
 			y = $ + 4 * scale
 
 			--Insert a small line break between players
