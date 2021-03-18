@@ -54,11 +54,11 @@ local CV_CDEnemyClearMax = CV_RegisterVar({
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = UINT16_MAX}
 })
-local CV_CDResetTagsOnDeath = CV_RegisterVar({
-	name = "cd_resettagsondeath",
-	defaultvalue = "Off",
+local CV_CDDMFlags = CV_RegisterVar({
+	name = "cd_dmflags",
+	defaultvalue = "7",
 	flags = CV_NETVAR|CV_SHOWMODIF,
-	PossibleValue = CV_OnOff
+	PossibleValue = {MIN = 0, MAX = 15}
 })
 local CV_CDShowHud = CV_RegisterVar({
 	name = "cd_showhud",
@@ -102,6 +102,7 @@ mobjinfo[MT_FOXCD_SCOREBOP] = {
 --Team lives for sync
 local teamlives = 0
 local travellifeloss = false
+local lastmapnum = 0
 
 --Current percentage of enemies destroyed in stage
 local enemyct = 0
@@ -119,6 +120,7 @@ local newclient = false
 addHook("NetVars", function(network)
 	teamlives = network($)
 	travellifeloss = network($)
+	lastmapnum = network($)
 	enemyct = network($)
 	targetenemyct = network($)
 	notifythreshold = network($)
@@ -367,6 +369,7 @@ end, COM_LOCAL)
 --Determine if we're a valid enemy for CD purposes
 local function ValidEnemy(mobj)
 	return mobj.flags & (MF_BOSS | MF_ENEMY)
+		and not mobj.info.cd_skipcount
 end
 
 --Set skincolor for target mobj based on source
@@ -616,7 +619,11 @@ addHook("PreThinkFrame", function()
 		PreThinkFrameFor(player)
 	end
 	for k_mobj, v_func in pairs(mobjthinkers)
-		mobjthinkerfunc[v_func](k_mobj)
+		if k_mobj.valid
+			mobjthinkerfunc[v_func](k_mobj)
+		else
+			mobjthinkers[k_mobj] = nil
+		end
 	end
 
 	--Play any lifesfx set for this frame
@@ -668,14 +675,16 @@ end)
 addHook("MapLoad", function(mapnum)
 	if G_IsSpecialStage()
 		--Tighten special stage time!
-		local count = 0
-		for player in players.iterate
-			count = $ + 1
+		if CV_CDDMFlags.value & 4
+			local count = 0
+			for player in players.iterate
+				count = $ + 1
+			end
+			for player in players.iterate
+				player.nightstime = max($ * 2 / max(count, 2), 30 * TICRATE)
+			end
 		end
-		for player in players.iterate
-			player.nightstime = max($ * 2 / max(count, 2), 30 * TICRATE)
-		end
-	else
+	elseif mapnum != lastmapnum
 		--Decrement lives! Oof
 		for player in players.iterate
 			travellifeloss = not $
@@ -684,12 +693,12 @@ addHook("MapLoad", function(mapnum)
 			end
 		end
 	end
+	lastmapnum = mapnum
 
 	--Count up enemies
 	--Only done here to avoid altering targetenemyct mid-game
 	for mobj in mobjs.iterate()
 		if ValidEnemy(mobj)
-		and not mobj.info.cd_skipcount
 			targetenemyct = $ + mobj.info.spawnhealth
 
 			--Debug
@@ -724,11 +733,10 @@ end)
 addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 	if target.cd_active
 	and source and source.valid
+	and (CV_CDDMFlags.value & 1)
 	and not (
-		--Skip damage mechanics on non-eligible enemies
-		target.info.cd_skipcount
 		--Nukes and other big explosions also instantly deal real damage
-		or damagetype == DMG_NUKE
+		damagetype == DMG_NUKE
 		or (damagetype & (DMG_CANHURTSELF | DMG_DEATHMASK))
 	)
 		if not target.cd_lastattacker
@@ -814,23 +822,21 @@ local function HandleDeath(target, inflictor, source, damagetype)
 		target.color = SKINCOLOR_NONE
 
 		--Increment enemy count!
-		if not target.info.cd_skipcount
-			enemyct = $ + target.info.spawnhealth
+		enemyct = $ + target.info.spawnhealth
 
-			--Make noises! And revive players
-			if targetenemyct > 0
-			and consoleplayer.realmo
-			and consoleplayer.realmo.valid
-				if enemyct >= targetenemyct
-					S_StartSound(nil, sfx_ideya, consoleplayer)
-					targetenemyct = 0
-					teamlives = max($, 2)
-				elseif notifythreshold <= 75
-				and enemyct * 100 / targetenemyct >= notifythreshold
-					S_StartSound(nil, sfx_3db06, consoleplayer)
-					notifythreshold = 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
-					teamlives = max($, 2)
-				end
+		--Make noises! And revive players
+		if targetenemyct > 0
+		and consoleplayer.realmo
+		and consoleplayer.realmo.valid
+			if enemyct >= targetenemyct
+				S_StartSound(nil, sfx_ideya, consoleplayer)
+				targetenemyct = 0
+				teamlives = max($, 2)
+			elseif notifythreshold <= 75
+			and enemyct * 100 / targetenemyct >= notifythreshold
+				S_StartSound(nil, sfx_3db06, consoleplayer)
+				notifythreshold = 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
+				teamlives = max($, 2)
 			end
 		end
 	end
@@ -840,7 +846,7 @@ addHook("MobjRemoved", HandleDeath)
 
 --Handle player death
 addHook("MobjDeath", function(target, inflictor, source, damagetype)
-	if CV_CDResetTagsOnDeath.value
+	if CV_CDDMFlags.value & 8
 		for mobj in mobjs.iterate()
 			if mobj.cd_lastattacker
 			and (
@@ -859,8 +865,11 @@ end, MT_PLAYER)
 
 --Handle special stage spheres (unless we're in CR_NIGHTSMODE)
 addHook("TouchSpecial", function(special, toucher)
-	if toucher.player and toucher.player.valid
-	and toucher.player.powers[pw_carry] == CR_NIGHTSMODE
+	if not (CV_CDDMFlags.value & 2)
+	or (
+		toucher.player and toucher.player.valid
+		and toucher.player.powers[pw_carry] == CR_NIGHTSMODE
+	)
 		return nil
 	end
 	if not special.cd_lastattacker
@@ -1041,7 +1050,12 @@ local function BotHelp(player)
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
 		"\x80  cd_enemyclearmax - Maximum # of enemies for level completion",
-		"\x80  cd_resettagsondeath - Reset players' enemy tags on death?",
+		"\x80  cd_dmflags - Difficulty modifier flags:",
+		"\x86   (1 = Enemies require 2+ hits from different players)",
+		"\x86   (2 = Spheres require 2 pickups from different players)",
+		"\x86   (4 = Special Stages restrict time based on player count)",
+		"\x86   (8 = Players reset their tagged enemy hits on death)",
+		"\x83   Note: These options can be combined by adding them together!",
 		"",
 		"\x87 MP Client:",
 		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",
