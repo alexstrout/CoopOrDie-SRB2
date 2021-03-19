@@ -196,6 +196,7 @@ end
 local function ResetCDInfo(ai)
 	ai.reborn = false --Just recently reborn from hitting end of level
 	ai.needsrevive = false --Spectating after hitting 0 lives
+	ai.awardshieldtime = 0 --Time after which a shield is awarded
 end
 
 --Register pin with player for lookup later
@@ -242,7 +243,7 @@ local function SetupCDInfo(player)
 	player.cdinfo = {
 		lastrings = 0, --Last ring count of player (used for end-of-level teleport)
 		lastxtralife = 0, --Last xtralife count of player (also used for eol teleport)
-		lastshield = 0, --Last shield of player (also used for eol teleport)
+		lastshield = SH_NONE, --Last shield of player (also used for eol teleport)
 		lastlives = player.lives --Last life count of player (used to sync w/ team)
 	}
 	ResetCDInfo(player.cdinfo) --Define the rest w/ their respective values
@@ -366,6 +367,16 @@ end, COM_LOCAL)
 	Now we're getting into actual CD-specific stuff
 	--------------------------------------------------------------------------------
 ]]
+--Get the next threshold to do an audio notification at
+--(and other cool things now, like team revive)
+local function GetNextNotifyThreshold(threshold)
+	if targetenemyct == 0
+	or enemyct >= targetenemyct
+		return -1
+	end
+	return 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
+end
+
 --Determine if we're a valid enemy for CD purposes
 local function ValidEnemy(mobj)
 	return mobj.flags & (MF_BOSS | MF_ENEMY)
@@ -433,7 +444,7 @@ local function PreThinkFrameFor(player)
 	end
 	local pci = player.cdinfo
 
-	--Handle lives here
+	--Handle lives here, unless we're a bot w/ life sync
 	if player.lives > 0
 	and pci.lastlives > 0
 	and not (player.ai and player.ai.synclives)
@@ -455,7 +466,10 @@ local function PreThinkFrameFor(player)
 		if teamlives <= 1
 			pci.needsrevive = true
 		else
-			teamlives = $ - 1
+			--Decrement teamlives if not a 1up
+			if player.lives < 1
+				teamlives = max($ - 1, 1)
+			end
 			pci.needsrevive = false
 			player.lives = teamlives
 			player.spectator = false
@@ -469,11 +483,16 @@ local function PreThinkFrameFor(player)
 	--Handle exiting here
 	if (player.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
+		--Record last rings, xtralife, and shield if applicable
 		pci.lastrings = player.rings
 		pci.lastxtralife = player.xtralife
 		pci.lastshield = player.powers[pw_shield]
+
+		--Reset starposts
 		player.starpostnum = 0
 		player.starposttime = 0
+
+		--Unset our finished state and queue for respawn
 		player.pflags = $ & ~PF_FINISHED
 		player.playerstate = PST_REBORN
 		pci.reborn = true
@@ -481,13 +500,39 @@ local function PreThinkFrameFor(player)
 	end
 	if pci.reborn
 		pci.reborn = false
+
+		--Carry over last rings and xtralife, unless we're a bot w/ ring sync
 		if not (player.ai and player.ai.syncrings)
 			player.rings = pci.lastrings
 			player.xtralife = pci.lastxtralife
+			pci.lastrings = 0
+			pci.lastxtralife = 0
 		end
-		if pci.lastshield & SH_NOSTACK
+
+		--Carry over shield, if applicable - otherwise queue shield award
+		if (pci.lastshield & SH_NOSTACK)
+		and pci.lastshield != SH_PINK
 			P_SwitchShield(player, pci.lastshield)
+			pci.lastshield = SH_NONE
 		else
+			pci.awardshieldtime = TICRATE
+		end
+
+		--Woosh!
+		if player.realmo and player.realmo.valid
+			S_StartSound(player.realmo, sfx_mixup)
+		end
+		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
+
+		--Revive someone if needed
+		teamlives = max($, 2)
+	end
+
+	--Award shields if queued
+	if pci.awardshieldtime
+		pci.awardshieldtime = $ - 1
+		if pci.awardshieldtime <= 0
+			--Pick from array of random shields
 			local shieldchoices = {
 				SH_ARMAGEDDON,
 				SH_ELEMENTAL,
@@ -497,16 +542,31 @@ local function PreThinkFrameFor(player)
 				SH_THUNDERCOIN,
 				SH_PITY | SH_FIREFLOWER
 			}
-			local i = P_RandomKey(table.maxn(shieldchoices)) + 1
-			P_SwitchShield(player, shieldchoices[i])
+
+			--If no shield, player is awarded a random shield
+			--Unless nobody's alive, in which case armageddon shield it is
+			local i = 1
+			for p in players.iterate
+				if p != player
+				and p.mo and p.mo.valid
+				and p.mo.health > 0
+					i = P_RandomKey(table.maxn(shieldchoices)) + 1
+					break
+				end
+			end
+
+			--Switch that shield! Honoring an existing SH_STACK if present
+			P_SwitchShield(player, (pci.lastshield & SH_STACK) | shieldchoices[i])
+			pci.lastshield = SH_NONE
+
+			--Sounds and fireflower color
 			if player.realmo and player.realmo.valid
+				if player.powers[pw_shield] & SH_FIREFLOWER
+					player.realmo.color = SKINCOLOR_WHITE
+				end
 				S_StartSound(player.realmo, sfx_shield)
 			end
 		end
-		if player.realmo and player.realmo.valid
-			S_StartSound(player.realmo, sfx_mixup)
-		end
-		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
 	end
 end
 
@@ -655,20 +715,31 @@ addHook("MapChange", function(mapnum)
 	for player in players.iterate
 		if player.cdinfo
 			ResetCDInfo(player.cdinfo)
+
+			--Hand out shields if restarting map from death
+			--Also covers teleport mechanic for singleplayer
+			if mapnum == lastmapnum
+			and (not multiplayer or teamlives < 2)
+				player.cdinfo.reborn = true
+			end
 		end
 	end
 
-	--Reset enemy count / notification threshold
-	enemyct = 0
+	--Reset enemy count, unless we're restarting the map
+	if mapnum != lastmapnum
+		enemyct = 0
+	elseif multiplayer
+		enemyct = $ / 2 --Unchanged for singleplayer
+	end
 	targetenemyct = 0
-	notifythreshold = 25
+	notifythreshold = -1
 
 	--Reset mobjthinkers
 	mobjthinkers = {}
 	collectgarbage()
 
-	--Reset lives if exhausted
-	teamlives = max($, 4)
+	--Reset teamlives if exhausted
+	teamlives = max($, 3)
 end)
 
 --Handle MapLoad for post-load actions
@@ -684,7 +755,7 @@ addHook("MapLoad", function(mapnum)
 				player.nightstime = max($ * 2 / max(count, 2), 30 * TICRATE)
 			end
 		end
-	elseif mapnum != lastmapnum
+	else
 		--Decrement lives! Oof
 		for player in players.iterate
 			travellifeloss = not $
@@ -713,6 +784,7 @@ addHook("MapLoad", function(mapnum)
 		FixedCeil($ * FRACUNIT * CV_CDEnemyClearPct.value / 100) / FRACUNIT,
 		CV_CDEnemyClearMax.value
 	)
+	notifythreshold = GetNextNotifyThreshold($)
 end)
 
 --Handle enemy spawning
@@ -825,18 +897,14 @@ local function HandleDeath(target, inflictor, source, damagetype)
 		enemyct = $ + target.info.spawnhealth
 
 		--Make noises! And revive players
-		if targetenemyct > 0
-			if enemyct >= targetenemyct
-				targetenemyct = 0
-				teamlives = max($, 2)
-				if consoleplayer and consoleplayer.valid
+		if notifythreshold > 0 and targetenemyct > 0
+		and enemyct * 100 / targetenemyct >= notifythreshold
+			notifythreshold = GetNextNotifyThreshold($)
+			teamlives = max($, 2)
+			if consoleplayer and consoleplayer.valid
+				if enemyct >= targetenemyct
 					S_StartSound(nil, sfx_ideya, consoleplayer)
-				end
-			elseif notifythreshold <= 75
-			and enemyct * 100 / targetenemyct >= notifythreshold
-				notifythreshold = 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
-				teamlives = max($, 2)
-				if consoleplayer and consoleplayer.valid
+				else
 					S_StartSound(nil, sfx_3db06, consoleplayer)
 				end
 			end
