@@ -56,9 +56,9 @@ local CV_CDEnemyClearMax = CV_RegisterVar({
 })
 local CV_CDDMFlags = CV_RegisterVar({
 	name = "cd_dmflags",
-	defaultvalue = "7",
+	defaultvalue = "15",
 	flags = CV_NETVAR|CV_SHOWMODIF,
-	PossibleValue = {MIN = 0, MAX = 15}
+	PossibleValue = {MIN = 0, MAX = 31}
 })
 local CV_CDShowHud = CV_RegisterVar({
 	name = "cd_showhud",
@@ -448,6 +448,7 @@ local function PreThinkFrameFor(player)
 	if player.lives > 0
 	and pci.lastlives > 0
 	and not (player.ai and player.ai.synclives)
+	and (CV_CDDMFlags.value & 8)
 		if player.lives != pci.lastlives
 			teamlives = player.lives
 		elseif teamlives > player.lives
@@ -463,6 +464,7 @@ local function PreThinkFrameFor(player)
 	--Handle revives
 	if player.spectator
 	and (player.lives < 1 or pci.needsrevive)
+	and (CV_CDDMFlags.value & 8)
 		if teamlives <= 1
 			pci.needsrevive = true
 		else
@@ -611,7 +613,7 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 			zdist
 		)
 		hudtext[i + 2] = "Dist "
-		if dist > 99999
+		if dist > INT16_MAX
 		or dist < 0
 			hudtext[i + 2] = $ .. "Far.."
 		else
@@ -698,6 +700,7 @@ addHook("PreThinkFrame", function()
 	--Note that consoleplayer is server for a few tics on new clients
 	--Thus, newclient never gets unset on the server itself, but that's ok
 	if newclient
+	and consoleplayer
 	and consoleplayer != server
 		newclient = false
 
@@ -752,10 +755,10 @@ addHook("MapLoad", function(mapnum)
 				count = $ + 1
 			end
 			for player in players.iterate
-				player.nightstime = max($ * 2 / max(count, 2), 30 * TICRATE)
+				player.nightstime = max($ * 4 / max(count, 4), 50 * TICRATE)
 			end
 		end
-	else
+	elseif CV_CDDMFlags.value & 8
 		--Decrement lives! Oof
 		for player in players.iterate
 			travellifeloss = not $
@@ -916,7 +919,7 @@ addHook("MobjRemoved", HandleDeath)
 
 --Handle player death
 addHook("MobjDeath", function(target, inflictor, source, damagetype)
-	if CV_CDDMFlags.value & 8
+	if CV_CDDMFlags.value & 16
 		for mobj in mobjs.iterate()
 			if mobj.cd_lastattacker
 			and (
@@ -1124,7 +1127,8 @@ local function BotHelp(player)
 		"\x86   (1 = Enemies require 2+ hits from different players)",
 		"\x86   (2 = Spheres require 2 pickups from different players)",
 		"\x86   (4 = Special Stages restrict time based on player count)",
-		"\x86   (8 = Players reset their tagged enemy hits on death)",
+		"\x86   (8 = Team lives are shared using 1up revive mechanics)",
+		"\x86   (16 = Players reset their tagged enemy hits on death)",
 		"\x83   Note: These options can be combined by adding them together!",
 		"",
 		"\x87 MP Client:",
