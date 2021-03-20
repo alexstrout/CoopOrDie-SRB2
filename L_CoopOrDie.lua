@@ -572,101 +572,6 @@ local function PreThinkFrameFor(player)
 	end
 end
 
---Build hudtext for a particular player
-local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
-	--Ring hud!
-	local rcolor = "\x82"
-	if player.rings <= 0
-	and leveltime % TICRATE < TICRATE / 2
-		rcolor = "\x85"
-	end
-	hudtext[i] = rcolor .. "Rings \x80" .. player.rings
-	if string.len(player.name) > 11
-		hudtext[i + 1] = string.sub(player.name, 0, 10) .. ".."
-	else
-		hudtext[i + 1] = player.name
-	end
-	if namecolor
-		hudtext[i + 1] = namecolor .. $
-	end
-
-	--Spectating or dead?
-	local pmo = player.realmo
-	if player.spectator
-	or not (pmo and pmo.valid)
-	or pmo.health <= 0
-		hudtext[i] = "\x86" .. "Dead.."
-		hudtext[i + 2] = ""
-		hudtext[i + 3] = ""
-		return i + 4
-	end
-
-	local bmo = stplyr.realmo
-	if bmo and bmo.valid
-		--Distance (pre-scaled for approximate drawing purposes - can get very large)
-		local zdist = (pmo.z - bmo.z) / bmo.scale
-		local dist = FixedHypot(
-			R_PointToDist2(
-				bmo.x, bmo.y,
-				pmo.x, pmo.y
-			) / bmo.scale,
-			zdist
-		)
-		hudtext[i + 2] = "Dist "
-		if dist > INT16_MAX
-		or dist < 0
-			hudtext[i + 2] = $ .. "Far.."
-		else
-			hudtext[i + 2] = $ .. dist / 100
-		end
-
-		--Angle (note angleturn is converted to angle by constant of 16, not FRACBITS)
-		local angle = stplyr.cmd.angleturn << 16
-			- R_PointToAngle2(
-				bmo.x, bmo.y,
-				pmo.x, pmo.y
-			)
-
-		local dir = nil
-		if dist <= 256
-			dir = " "
-		elseif AbsAngle(angle) > ANGLE_135
-			dir = "v"
-		elseif AbsAngle(angle) > ANGLE_45
-			if angle < 0
-				dir = "<"
-			else
-				dir = ">"
-			end
-		else
-			dir = "^"
-		end
-		if abs(zdist) > 256
-			if dist - abs(zdist) < dist / 8
-				dir = " "
-			end
-			if zdist < 0
-				dir = "-" .. $
-			else
-				dir = "+" .. $
-			end
-		end
-		hudtext[i + 3] = dir
-
-		--Keep simple foxBot concepts in case player prefers only this hud
-		if stplyr.ai
-		and player == stplyr.ai.leader
-			if stplyr.ai.playernosight
-				hudtext[i + 2] = "\x87" .. $
-			end
-			if stplyr.ai.doteleport
-				hudtext[i + 3] = "\x84Teleporting..."
-			end
-		end
-	end
-	return i + 4
-end
-
 
 
 --[[
@@ -976,6 +881,99 @@ addHook("PlayerQuit", function(player, reason)
 end)
 
 --HUD hook!
+local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
+	--Ring hud!
+	local rcolor = "\x82"
+	if player.rings <= 0
+	and leveltime % TICRATE < TICRATE / 2
+		rcolor = "\x85"
+	end
+	hudtext[i] = rcolor .. "Rings \x80" .. player.rings
+	if string.len(player.name) > 11
+		hudtext[i + 1] = string.sub(player.name, 0, 10) .. ".."
+	else
+		hudtext[i + 1] = player.name
+	end
+	if namecolor
+		hudtext[i + 1] = namecolor .. $
+	end
+
+	--Spectating or dead?
+	local pmo = player.realmo
+	if player.spectator
+	or not (pmo and pmo.valid)
+	or pmo.health <= 0
+		hudtext[i] = "\x86" .. "Dead.."
+		hudtext[i + 2] = ""
+		hudtext[i + 3] = ""
+		return i + 4
+	end
+
+	local bmo = stplyr.realmo
+	if bmo and bmo.valid
+		--Distance (pre-scaled for approximate drawing purposes - can get very large)
+		local zdist = (pmo.z - bmo.z) / bmo.scale
+		local dist = FixedHypot(
+			R_PointToDist2(
+				bmo.x, bmo.y,
+				pmo.x, pmo.y
+			) / bmo.scale,
+			zdist
+		)
+		hudtext[i + 2] = "Dist "
+		if dist > INT16_MAX
+		or dist < 0
+			hudtext[i + 2] = $ .. "Far.."
+		else
+			hudtext[i + 2] = $ .. dist / 100
+		end
+
+		--Angle (note angleturn is converted to angle by constant of 16, not FRACBITS)
+		local angle = stplyr.cmd.angleturn << 16
+			- R_PointToAngle2(
+				bmo.x, bmo.y,
+				pmo.x, pmo.y
+			)
+
+		local dir = nil
+		if dist <= 256
+			dir = " "
+		elseif AbsAngle(angle) > ANGLE_135
+			dir = "v"
+		elseif AbsAngle(angle) > ANGLE_45
+			if angle < 0
+				dir = "<"
+			else
+				dir = ">"
+			end
+		else
+			dir = "^"
+		end
+		if abs(zdist) > 256
+			if dist - abs(zdist) < dist / 8
+				dir = " "
+			end
+			if zdist < 0
+				dir = "-" .. $
+			else
+				dir = "+" .. $
+			end
+		end
+		hudtext[i + 3] = dir
+
+		--Keep simple foxBot concepts in case player prefers only this hud
+		if stplyr.ai
+		and player == stplyr.ai.leader
+			if stplyr.ai.playernosight
+				hudtext[i + 2] = "\x87" .. $
+			end
+			if stplyr.ai.doteleport
+				hudtext[i + 3] = "\x84Teleporting..."
+			end
+		end
+	end
+	return i + 4
+end
 hud.add(function(v, stplyr, cam)
 	--If not previous text in buffer... (e.g. debug)
 	if hudtext[1] == nil
