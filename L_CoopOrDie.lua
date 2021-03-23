@@ -101,6 +101,7 @@ mobjinfo[MT_FOXCD_SCOREBOP] = {
 ]]
 --Team lives for sync
 local teamlives = 0
+local revivequeue = {}
 local travellifeloss = false
 local lastmapnum = 0
 
@@ -255,6 +256,14 @@ local function DestroyCDInfo(player)
 		return
 	end
 
+	--Remove us from the revive queue
+	for k, v in pairs(revivequeue)
+		if v == player
+			table.remove(revivequeue, k)
+			break
+		end
+	end
+
 	--Unregister us from all players' pinned players
 	for p in players.iterate
 		UnregisterPinnedPlayer(p, player)
@@ -352,8 +361,17 @@ COM_AddCommand("UNPINPLAYER", UnpinPlayer, 0)
 COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 	bot = ResolvePlayerByNum(bot)
 	if not (bot and bot.valid and bot.cdinfo)
+		CONS_Printf(player, "-- mobjthinkers --")
+		for k, v in pairs(mobjthinkers)
+			CONS_Printf(player, tostring(k) .. " = " .. v)
+		end
+		CONS_Printf(player, "-- revivequeue --")
+		for k, v in pairs(revivequeue)
+			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. v.name)
+		end
 		return
 	end
+	CONS_Printf(player, "-- cdinfo " .. bot.name .. " --")
 	for k, v in pairs(bot.cdinfo)
 		CONS_Printf(player, k .. " = " .. tostring(v))
 	end
@@ -462,14 +480,19 @@ local function PreThinkFrameFor(player)
 	pci.lastlives = player.lives
 
 	--Handle revives
-	if player.spectator
-	and (player.lives < 1 or pci.needsrevive)
+	if (player.lives <= 0 or pci.needsrevive)
 	and (CV_CDDMFlags.value & 8)
 		if teamlives <= 1
+			if not pci.needsrevive
+				table.insert(revivequeue, player)
+			end
 			pci.needsrevive = true
-		else
+		elseif player.lives > 0 --Party revive via 1up
+		or revivequeue[1] == player --Next in queue
+			--Should just flush queue on 1up
+			table.remove(revivequeue, 1)
 			--Decrement teamlives if not a 1up
-			if player.lives < 1
+			if player.lives <= 0
 				teamlives = max($ - 1, 1)
 			end
 			pci.needsrevive = false
@@ -478,8 +501,6 @@ local function PreThinkFrameFor(player)
 			player.playerstate = PST_REBORN
 			lifesfx = sfx_marioa --Takes priority over other lifesfx
 		end
-	else
-		pci.needsrevive = false
 	end
 
 	--Handle exiting here
@@ -504,7 +525,7 @@ local function PreThinkFrameFor(player)
 		pci.reborn = false
 
 		--Carry over last rings and xtralife, unless we're a bot w/ ring sync
-		if not (player.ai and player.ai.syncrings)
+		if leveltime and not (player.ai and player.ai.syncrings)
 			player.rings = pci.lastrings
 			player.xtralife = pci.lastxtralife
 			pci.lastrings = 0
@@ -516,6 +537,8 @@ local function PreThinkFrameFor(player)
 		and pci.lastshield != SH_PINK
 			P_SwitchShield(player, pci.lastshield)
 			pci.lastshield = SH_NONE
+		elseif not leveltime --Randomize a bit on level start
+			pci.awardshieldtime = P_RandomByte() * TICRATE / 170
 		else
 			pci.awardshieldtime = TICRATE
 		end
@@ -627,7 +650,7 @@ addHook("MapChange", function(mapnum)
 			--Hand out shields if restarting map from death
 			--Also covers teleport mechanic for singleplayer
 			if mapnum == lastmapnum
-			and (not multiplayer or teamlives < 2)
+			and (not multiplayer or teamlives <= 1)
 				player.cdinfo.reborn = true
 			end
 		end
@@ -642,7 +665,8 @@ addHook("MapChange", function(mapnum)
 	targetenemyct = 0
 	notifythreshold = -1
 
-	--Reset mobjthinkers
+	--Reset revivequeue / mobjthinkers
+	revivequeue = {}
 	mobjthinkers = {}
 	collectgarbage()
 
