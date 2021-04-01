@@ -44,13 +44,13 @@ local CV_CDDebug = CV_RegisterVar({
 })
 local CV_CDEnemyClearPct = CV_RegisterVar({
 	name = "cd_enemyclearpct",
-	defaultvalue = "50",
+	defaultvalue = "40",
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = 100}
 })
 local CV_CDEnemyClearMax = CV_RegisterVar({
 	name = "cd_enemyclearmax",
-	defaultvalue = "100",
+	defaultvalue = "75",
 	flags = CV_NETVAR|CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = UINT16_MAX}
 })
@@ -465,19 +465,24 @@ local function PreThinkFrameFor(player)
 	--Handle lives here, unless we're a bot w/ life sync
 	if player.lives > 0
 	and pci.lastlives > 0
-	and not (player.ai and player.ai.synclives)
 	and (CV_CDDMFlags.value & 8)
 		if player.lives != pci.lastlives
+			if teamlives < player.lives
+			and player != consoleplayer --Don't play if we're contributor
+			and leveltime and not lifesfx --Revive sound takes priority
+				--P_PlayLivesJingle(player)
+				lifesfx = sfx_3db09
+			end
 			teamlives = player.lives
-		elseif teamlives > player.lives
-		and leveltime and player.jointime > 2
-		and not lifesfx --Revive sound takes priority
-			--P_PlayLivesJingle(player)
-			lifesfx = sfx_3db09
+		else
+			player.lives = teamlives
 		end
-		player.lives = teamlives
 	end
-	pci.lastlives = player.lives
+	if player.ai and player.ai.synclives
+		pci.lastlives = 0
+	else
+		pci.lastlives = player.lives
+	end
 
 	--Handle revives
 	if (player.lives <= 0 or pci.needsrevive)
@@ -684,15 +689,7 @@ addHook("MapLoad", function(mapnum)
 				count = $ + 1
 			end
 			for player in players.iterate
-				player.nightstime = max($ * 4 / max(count, 4), 50 * TICRATE)
-			end
-		end
-	elseif CV_CDDMFlags.value & 8
-		--Decrement lives! Oof
-		for player in players.iterate
-			travellifeloss = not $
-			if travellifeloss
-				teamlives = max($ - 1, 1)
+				player.nightstime = max($ * 3 / max(count, 3), 60 * TICRATE)
 			end
 		end
 	end
