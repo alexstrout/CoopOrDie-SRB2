@@ -102,7 +102,6 @@ mobjinfo[MT_FOXCD_SCOREBOP] = {
 --Team lives for sync
 local teamlives = 0
 local revivequeue = {}
-local travellifeloss = false
 local lastmapnum = 0
 
 --Current percentage of enemies destroyed in stage
@@ -120,7 +119,7 @@ local newclient = false
 --NetVars!
 addHook("NetVars", function(network)
 	teamlives = network($)
-	travellifeloss = network($)
+	revivequeue = network($)
 	lastmapnum = network($)
 	enemyct = network($)
 	targetenemyct = network($)
@@ -520,10 +519,28 @@ local function PreThinkFrameFor(player)
 		player.starpostnum = 0
 		player.starposttime = 0
 
+		--If we're a bot, bump our leader to the top of the queue
+		--This prevents us from continually respawning at the exit
+		if player.ai
+		and player.ai.leader
+		and player.ai.leader.valid
+		and player.ai.leader.spectator
+			for k, v in pairs(revivequeue)
+				if v == player.ai.leader
+					table.remove(revivequeue, k)
+					table.insert(revivequeue, 1, player.ai.leader)
+					break
+				end
+			end
+		end
+
 		--Unset our finished state and queue for respawn
 		player.pflags = $ & ~PF_FINISHED
 		player.playerstate = PST_REBORN
 		pci.reborn = true
+
+		--Revive someone if needed
+		teamlives = max($, 2)
 		return
 	end
 	if pci.reborn
@@ -553,15 +570,13 @@ local function PreThinkFrameFor(player)
 			S_StartSound(player.realmo, sfx_mixup)
 		end
 		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
-
-		--Revive someone if needed
-		teamlives = max($, 2)
 	end
 
 	--Award shields if queued
-	if pci.awardshieldtime
+	if pci.awardshieldtime > 0
 		pci.awardshieldtime = $ - 1
 		if pci.awardshieldtime <= 0
+		and not (player.powers[pw_shield] & SH_NOSTACK)
 			--Pick from array of random shields
 			local shieldchoices = {
 				SH_ARMAGEDDON,
@@ -572,18 +587,7 @@ local function PreThinkFrameFor(player)
 				SH_THUNDERCOIN,
 				SH_PITY | SH_FIREFLOWER
 			}
-
-			--If no shield, player is awarded a random shield
-			--Unless nobody's alive, in which case armageddon shield it is
-			local i = 1
-			for p in players.iterate
-				if p != player
-				and p.mo and p.mo.valid
-				and p.mo.health > 0
-					i = P_RandomKey(table.maxn(shieldchoices)) + 1
-					break
-				end
-			end
+			local i = P_RandomKey(table.maxn(shieldchoices)) + 1
 
 			--Switch that shield! Honoring an existing SH_STACK if present
 			P_SwitchShield(player, (pci.lastshield & SH_STACK) | shieldchoices[i])
