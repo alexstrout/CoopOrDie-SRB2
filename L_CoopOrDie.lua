@@ -449,6 +449,21 @@ mobjthinkerfunc[2] = function(mobj) --MobjThinkForSphere
 	end
 end
 
+--Print various event messages
+local function PrintDownMessage(player)
+	print(player.name .. " is out!")
+end
+local function PrintReviveMessage(player)
+	if player --Assumed valid
+		print(player.name .. " has revived!")
+	else
+		print("The party has revived via a 1up monitor!")
+	end
+end
+local function PrintRebornMessage(player)
+	print(player.name .. " has warped to start. (" .. targetenemyct - enemyct .. " enemies remaining)")
+end
+
 --Think for players!
 local function PreThinkFrameFor(player)
 	if not player.valid
@@ -489,6 +504,7 @@ local function PreThinkFrameFor(player)
 		if teamlives <= 1
 			if not pci.needsrevive
 				table.insert(revivequeue, player)
+				PrintDownMessage(player)
 			end
 			pci.needsrevive = true
 		elseif player.lives > 0 --Party revive via 1up
@@ -498,6 +514,10 @@ local function PreThinkFrameFor(player)
 			--Decrement teamlives if not a 1up
 			if player.lives <= 0
 				teamlives = max($ - 1, 1)
+				PrintReviveMessage(player)
+			--Otherwise print a party revive message once
+			elseif table.maxn(revivequeue) == 0
+				PrintReviveMessage()
 			end
 			pci.needsrevive = false
 			player.lives = teamlives
@@ -538,6 +558,7 @@ local function PreThinkFrameFor(player)
 		player.pflags = $ & ~PF_FINISHED
 		player.playerstate = PST_REBORN
 		pci.reborn = true
+		PrintRebornMessage(player)
 
 		--Revive someone if needed
 		teamlives = max($, 2)
