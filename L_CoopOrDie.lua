@@ -396,7 +396,9 @@ end
 
 --Determine if we're a valid enemy for CD purposes
 local function ValidEnemy(mobj)
-	return mobj.flags & (MF_BOSS | MF_ENEMY)
+	return (mobj.flags & (MF_BOSS | MF_ENEMY))
+		and mobj.info.spawnhealth < 16 --Skip anything crazy
+		and mobj.health > 0 --Doesn't hurt to check
 		and not mobj.info.cd_skipcount
 end
 
@@ -420,7 +422,8 @@ local function SetColorFor(mobj, source)
 end
 
 --Handle mobj tic logic for enemies
-mobjthinkerfunc[1] = function(mobj) --MobjThinkForEnemy
+local MobjThinkForEnemy = 1
+mobjthinkerfunc[MobjThinkForEnemy] = function(mobj)
 	--Decrement frettime
 	if mobj.cd_frettime
 		mobj.cd_frettime = $ - 1
@@ -433,7 +436,8 @@ mobjthinkerfunc[1] = function(mobj) --MobjThinkForEnemy
 end
 
 --Handle mobj tic logic for spheres
-mobjthinkerfunc[2] = function(mobj) --MobjThinkForSphere
+local MobjThinkForSphere = 2
+mobjthinkerfunc[MobjThinkForSphere] = function(mobj)
 	--Decrement frettime
 	if mobj.cd_frettime
 		mobj.cd_frettime = $ - 1
@@ -461,7 +465,8 @@ local function PrintReviveMessage(player)
 	end
 end
 local function PrintRebornMessage(player)
-	print(player.name .. " has warped to start. (" .. targetenemyct - enemyct .. " enemies remaining)")
+	--Assumes targetenemyct > enemyct > 0
+	print(player.name .. " has warped to start. (" .. 100 - (enemyct * 100 / targetenemyct) .. "% enemy goal remaining)")
 end
 
 --Think for players!
@@ -705,6 +710,42 @@ addHook("MapChange", function(mapnum)
 end)
 
 --Handle MapLoad for post-load actions
+local PostMapLoadFor = 3
+mobjthinkerfunc[PostMapLoadFor] = function(mobj)
+	if mobj.cd_counttime
+		mobj.cd_counttime = $ - 1
+		if mobj.cd_counttime <= 0
+			mobjthinkers[mobj] = nil
+			mobj.cd_counttime = nil
+
+			--Count up enemies
+			--Only done here to avoid altering targetenemyct mid-game
+			for mobj in mobjs.iterate()
+				if ValidEnemy(mobj)
+					targetenemyct = $ + mobj.info.spawnhealth
+
+					--Debug
+					if CV_CDDebug.value and not netgame
+						mobj.colorized = true
+						mobj.color = SKINCOLOR_ORANGE
+					end
+				end
+			end
+			if CV_CDDebug.value
+				print("-- CDDebug: Counted " .. targetenemyct .. " enemies * spawnhealth")
+			end
+			targetenemyct = min(
+				--40% of 1 enemy is still 1 enemy!
+				FixedCeil($ * FRACUNIT * CV_CDEnemyClearPct.value / 100) / FRACUNIT,
+				CV_CDEnemyClearMax.value
+			)
+			if CV_CDDebug.value
+				print("-- CDDebug: Adjusting count to " .. targetenemyct)
+			end
+			notifythreshold = GetNextNotifyThreshold($)
+		end
+	end
+end
 addHook("MapLoad", function(mapnum)
 	if G_IsSpecialStage()
 		--Tighten special stage time!
@@ -720,25 +761,12 @@ addHook("MapLoad", function(mapnum)
 	end
 	lastmapnum = mapnum
 
-	--Count up enemies
-	--Only done here to avoid altering targetenemyct mid-game
-	for mobj in mobjs.iterate()
-		if ValidEnemy(mobj)
-			targetenemyct = $ + mobj.info.spawnhealth
-
-			--Debug
-			if CV_CDDebug.value
-				mobj.colorized = true
-				mobj.color = SKINCOLOR_ORANGE
-			end
-		end
+	--Handle any post-MapLoad logic - just use mobjthinkers for this
+	--Server may be nil when exiting to title, but should otherwise always be valid
+	if server and server.valid
+		mobjthinkers[server] = PostMapLoadFor
+		server.cd_counttime = TICRATE
 	end
-	targetenemyct = min(
-		--40% of 1 enemy is still 1 enemy!
-		FixedCeil($ * FRACUNIT * CV_CDEnemyClearPct.value / 100) / FRACUNIT,
-		CV_CDEnemyClearMax.value
-	)
-	notifythreshold = GetNextNotifyThreshold($)
 end)
 
 --Handle enemy spawning
@@ -748,7 +776,7 @@ addHook("MobjSpawn", function(mobj)
 		mobj.cd_active = true
 
 		--Debug
-		if CV_CDDebug.value
+		if CV_CDDebug.value and not netgame
 			mobj.colorized = true
 			mobj.color = SKINCOLOR_GREEN
 		end
@@ -783,7 +811,7 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			P_KillMobj(scorebop, inflictor, source, damagetype)
 
 			--Boop!
-			mobjthinkers[target] = 1
+			mobjthinkers[target] = MobjThinkForEnemy
 			target.cd_frettime = TICRATE / 4
 			target.flags2 = $ | MF2_FRET
 			S_StartSound(target, sfx_dmpain)
@@ -793,7 +821,7 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			--Merp
 			if inflictor
 			and not target.cd_frettime
-				mobjthinkers[target] = 1
+				mobjthinkers[target] = MobjThinkForEnemy
 				target.cd_frettime = TICRATE / 2
 				S_StartSound(target, sfx_s3k7b)
 
@@ -838,7 +866,8 @@ end)
 --Handle enemy death
 local function HandleDeath(target, inflictor, source, damagetype)
 	--Need to check valid as MobjRemoved may fire outside level
-	if target.valid and target.cd_active
+	--Also check leveltime in case any enemies are removed at level start
+	if leveltime and target.valid and target.cd_active
 		target.cd_active = false
 		target.cd_lastattacker = nil
 		mobjthinkers[target] = nil
@@ -908,7 +937,7 @@ addHook("TouchSpecial", function(special, toucher)
 		special.color = SKINCOLOR_WHITE
 
 		--*iconic sphere noises*
-		mobjthinkers[special] = 2
+		mobjthinkers[special] = MobjThinkForSphere
 		special.cd_frettime = TICRATE / 8
 		S_StartSound(toucher, sfx_s3k65)
 		return true
@@ -928,13 +957,22 @@ end)
 
 --HUD hook!
 local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
-	--Ring hud!
+	--Ring / time hud!
 	local rcolor = "\x82"
-	if player.rings <= 0
-	and leveltime % TICRATE < TICRATE / 2
-		rcolor = "\x85"
+	if player.nightstime
+		if player.mo and player.mo.valid
+		and (player.mo.eflags & (MFE_TOUCHWATER | MFE_UNDERWATER))
+		and leveltime % (TICRATE / 4) < TICRATE / 8
+			rcolor = "\x85"
+		end
+		hudtext[i] = rcolor .. "Time \x80" .. player.nightstime / TICRATE
+	else
+		if player.rings <= 0
+		and leveltime % TICRATE < TICRATE / 2
+			rcolor = "\x85"
+		end
+		hudtext[i] = rcolor .. "Rings \x80" .. player.rings
 	end
-	hudtext[i] = rcolor .. "Rings \x80" .. player.rings
 	if string.len(player.name) > 11
 		hudtext[i + 1] = string.sub(player.name, 0, 10) .. ".."
 	else
@@ -1032,19 +1070,22 @@ hud.add(function(v, stplyr, cam)
 		local i = 100
 		if targetenemyct > 0
 			i = enemyct * 100 / targetenemyct
-		end
-		hudtext[1] = i .. "%"
-		hudtext[2] = "Enemy Goal:"
-		if i < 25
-			hudtext[1] = "\x85" .. $
-		elseif i < 50
-			hudtext[1] = "\x84" .. $
-		elseif i < 75
-			hudtext[1] = "\x81" .. $
-		elseif i < 100
-			hudtext[1] = "\x8A" .. $
+			hudtext[1] = i .. "%"
+			hudtext[2] = "Enemy Goal:"
+			if i < 25
+				hudtext[1] = "\x85" .. $
+			elseif i < 50
+				hudtext[1] = "\x84" .. $
+			elseif i < 75
+				hudtext[1] = "\x81" .. $
+			elseif i < 100
+				hudtext[1] = "\x8A" .. $
+			else
+				hudtext[1] = "\x83" .. "Done!"
+			end
 		else
-			hudtext[1] = "\x83" .. "Done!"
+			hudtext[1] = ""
+			hudtext[2] = ""
 		end
 
 		--Put AI leader up top if using foxBot
