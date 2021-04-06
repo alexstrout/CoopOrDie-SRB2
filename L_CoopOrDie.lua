@@ -153,6 +153,7 @@ mobjinfo[MT_YELLOWSHELL].cd_aispinattack = true
 
 --Enemies that bots should prioritize when tagged
 mobjinfo[MT_HIVEELEMENTAL].cd_aipriority = true
+mobjinfo[MT_BLUESPHERE].cd_aipriority = true
 
 --Text table used for HUD hook
 local hudtext = {}
