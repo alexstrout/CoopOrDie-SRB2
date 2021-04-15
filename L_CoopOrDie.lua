@@ -245,7 +245,8 @@ local function SetupCDInfo(player)
 		lastrings = 0, --Last ring count of player (used for end-of-level teleport)
 		lastxtralife = 0, --Last xtralife count of player (also used for eol teleport)
 		lastshield = SH_NONE, --Last shield of player (also used for eol teleport)
-		lastlives = player.lives --Last life count of player (used to sync w/ team)
+		lastlives = player.lives, --Last life count of player (used to sync w/ team)
+		useteamlives = false --Current sync setting for teamlives
 	}
 	ResetCDInfo(player.cdinfo) --Define the rest w/ their respective values
 end
@@ -482,55 +483,69 @@ local function PreThinkFrameFor(player)
 	end
 	local pci = player.cdinfo
 
-	--Handle lives here, unless we're a bot w/ life sync
-	if player.lives > 0
-	and pci.lastlives > 0
-	and (CV_CDDMFlags.value & 8)
-		if player.lives != pci.lastlives
-			if teamlives < player.lives
-			and player != consoleplayer --Don't play if we're contributor
-			and leveltime and not lifesfx --Revive sound takes priority
-				--P_PlayLivesJingle(player)
-				lifesfx = sfx_3db09
+	--Handle lives here - note that useteamlives lags behind a tic
+	--This fixes some timing issues w/ foxBot if loaded first
+	if pci.useteamlives
+		if player.lives > 0
+		and pci.lastlives > 0
+			if player.lives != pci.lastlives
+				if teamlives < player.lives
+				and player != consoleplayer --Don't play if we're contributor
+				and leveltime and not lifesfx --Revive sound takes priority
+					--P_PlayLivesJingle(player)
+					lifesfx = sfx_3db09
+				end
+				teamlives = player.lives
+			else
+				player.lives = teamlives
 			end
-			teamlives = player.lives
-		else
-			player.lives = teamlives
+		--KO'd? Register for revive if not already
+		elseif player.lives <= 0
+		and pci.lastlives <= 0
+		and not pci.needsrevive
+			pci.needsrevive = true
+			table.insert(revivequeue, player)
+			PrintDownMessage(player)
 		end
 	end
-	if player.ai and player.ai.synclives
-		pci.lastlives = 0
-	else
-		pci.lastlives = player.lives
-	end
+	pci.lastlives = player.lives
+	pci.useteamlives = (CV_CDDMFlags.value & 8) --Set based on dmflags
+		and not (player.ai and player.ai.synclives) --And foxBot sync
 
 	--Handle revives
-	if (player.lives <= 0 or pci.needsrevive)
-	and (CV_CDDMFlags.value & 8)
-		if teamlives <= 1
-			if not pci.needsrevive
-				table.insert(revivequeue, player)
-				PrintDownMessage(player)
-			end
-			pci.needsrevive = true
-		elseif player.lives > 0 --Party revive via 1up
-		or revivequeue[1] == player --Next in queue
-			--Should just flush queue on 1up
-			table.remove(revivequeue, 1)
-			--Decrement teamlives if not a 1up
-			if player.lives <= 0
-				teamlives = max($ - 1, 1)
-				PrintReviveMessage(player)
-			--Otherwise print a party revive message once
-			elseif table.maxn(revivequeue) == 0
-				PrintReviveMessage()
-			end
-			pci.needsrevive = false
-			player.lives = teamlives
-			player.spectator = false
-			player.playerstate = PST_REBORN
-			lifesfx = sfx_marioa --Takes priority over other lifesfx
+	if pci.needsrevive
+	and (
+		(
+			--Team revive
+			teamlives > 1
+			and (
+				player.lives > 0 --Party revive via 1up
+				or revivequeue[1] == player --Next in queue
+			)
+		)
+		or (
+			--Somehow revived on our own
+			player.mo and player.mo.valid
+			and player.mo.health > 0
+		)
+	)
+		pci.needsrevive = false
+		table.remove(revivequeue, 1) --Should flush queue on 1up
+		--Just broadcast message for bots
+		if not pci.useteamlives
+			PrintReviveMessage(player)
+		--Decrement teamlives if not a 1up
+		elseif player.lives <= 0
+			teamlives = max($ - 1, 1)
+			PrintReviveMessage(player)
+		--Otherwise print a party revive message once
+		elseif table.maxn(revivequeue) == 0
+			PrintReviveMessage()
 		end
+		player.lives = teamlives
+		player.spectator = false
+		player.playerstate = PST_REBORN
+		lifesfx = sfx_marioa --Takes priority over other lifesfx
 	end
 
 	--Handle exiting here
@@ -577,9 +592,9 @@ local function PreThinkFrameFor(player)
 		if leveltime and not (player.ai and player.ai.syncrings)
 			player.rings = pci.lastrings
 			player.xtralife = pci.lastxtralife
-			pci.lastrings = 0
-			pci.lastxtralife = 0
 		end
+		pci.lastrings = 0
+		pci.lastxtralife = 0
 
 		--Carry over shield, if applicable - otherwise queue shield award
 		if (pci.lastshield & SH_NOSTACK)
