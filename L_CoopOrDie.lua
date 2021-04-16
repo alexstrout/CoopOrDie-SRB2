@@ -787,6 +787,10 @@ end)
 
 --Handle enemy spawning
 addHook("MobjSpawn", function(mobj)
+	--Flag boss types as priority AI target
+	if mobj.flags & MF_BOSS
+		mobj.info.cd_aipriority = true
+	end
 	--Flag enemy as "active" to run damage hooks etc. on
 	if ValidEnemy(mobj)
 		mobj.cd_active = true
