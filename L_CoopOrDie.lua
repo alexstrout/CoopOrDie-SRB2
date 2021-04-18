@@ -1024,7 +1024,7 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 			) / bmo.scale,
 			zdist
 		)
-		hudtext[i + 2] = "Dist "
+		hudtext[i + 2] = "\x86" .. "Dist "
 		if dist > INT16_MAX
 		or dist < 0
 			hudtext[i + 2] = $ .. "Far.."
@@ -1063,15 +1063,18 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 				dir = "+" .. $
 			end
 		end
-		hudtext[i + 3] = dir
+		hudtext[i + 3] = "\x86" .. dir
 
 		--Keep simple foxBot concepts in case player prefers only this hud
 		if stplyr.ai
 		and player == stplyr.ai.leader
 			if stplyr.ai.playernosight
-				hudtext[i + 2] = "\x87" .. $
+				hudtext[i + 2] = "\x87" .. string.sub($, 2)
 			end
-			if stplyr.ai.doteleport
+			if stplyr.ai.cmd_time > 0
+			and stplyr.ai.cmd_time < 3 * TICRATE
+				hudtext[i + 3] = "\x81" + "AI control in " .. stplyr.ai.cmd_time / TICRATE + 1 .. "..."
+			elseif stplyr.ai.doteleport
 				hudtext[i + 3] = "\x84Teleporting..."
 			end
 		end
@@ -1190,6 +1193,7 @@ hud.add(function(v, stplyr, cam)
 				V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size)
 		else
 			if k > 2 and (k + 2) % 4 == 0 --Direction indicator
+			and string.len(s) < 4 --Displaying a direction
 				v.drawString(320 - x - 34 * scale, y, s,
 					V_SNAPTOTOP | V_SNAPTORIGHT | V_MONOSPACE | V_ALLOWLOWERCASE | v.localTransFlag(), size_r)
 			else
