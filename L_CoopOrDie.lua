@@ -153,7 +153,6 @@ mobjinfo[MT_YELLOWSHELL].cd_aispinattack = true
 
 --Enemies that bots should prioritize when tagged
 mobjinfo[MT_HIVEELEMENTAL].cd_aipriority = true
-mobjinfo[MT_BLUESPHERE].cd_aipriority = true
 
 --Text table used for HUD hook
 local hudtext = {}
@@ -788,7 +787,7 @@ end)
 --Handle enemy spawning
 addHook("MobjSpawn", function(mobj)
 	--Flag boss types as priority AI target
-	if mobj.flags & MF_BOSS
+	if mobj.info.flags & MF_BOSS
 		mobj.info.cd_aipriority = true
 	end
 	--Flag enemy as "active" to run damage hooks etc. on
@@ -816,8 +815,7 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 		if not target.cd_lastattacker
 			target.cd_lastattacker = {
 				mo = source,
-				--Use non-nil fallback for comparison purposes later
-				player = source.player or {}
+				player = source.player
 			}
 
 			--Handle colorization
@@ -837,7 +835,7 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			S_StartSound(target, sfx_dmpain)
 			return true
 		elseif target.cd_lastattacker.mo == source
-		or target.cd_lastattacker.player == source.player
+		or (source.player and target.cd_lastattacker.player == source.player)
 			--Merp
 			if inflictor
 			and not target.cd_frettime
@@ -924,7 +922,7 @@ addHook("MobjDeath", function(target, inflictor, source, damagetype)
 			if mobj.cd_lastattacker
 			and (
 				mobj.cd_lastattacker.mo == target
-				or mobj.cd_lastattacker.player == target.player
+				or (target.player and mobj.cd_lastattacker.player == target.player)
 			)
 				mobj.cd_lastattacker = nil
 
@@ -936,20 +934,16 @@ addHook("MobjDeath", function(target, inflictor, source, damagetype)
 	end
 end, MT_PLAYER)
 
---Handle special stage spheres (unless we're in CR_NIGHTSMODE)
+--Handle special stage spheres
 addHook("TouchSpecial", function(special, toucher)
 	if not (CV_CDDMFlags.value & 2)
-	or (
-		toucher.player and toucher.player.valid
-		and toucher.player.powers[pw_carry] == CR_NIGHTSMODE
-	)
+	or not multiplayer --No teammates in singleplayer special stages
 		return nil
 	end
 	if not special.cd_lastattacker
 		special.cd_lastattacker = {
 			mo = toucher,
-			--Use non-nil fallback for comparison purposes later
-			player = toucher.player or {}
+			player = toucher.player
 		}
 
 		--Handle colorization
@@ -962,7 +956,7 @@ addHook("TouchSpecial", function(special, toucher)
 		S_StartSound(toucher, sfx_s3k65)
 		return true
 	elseif special.cd_lastattacker.mo == toucher
-	or special.cd_lastattacker.player == toucher.player
+	or (toucher.player and special.cd_lastattacker.player == toucher.player)
 	or special.cd_frettime --Simulate MF2_FRET behavior
 		return true
 	end
