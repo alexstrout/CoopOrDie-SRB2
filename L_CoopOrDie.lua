@@ -818,6 +818,20 @@ addHook("MobjSpawn", function(mobj)
 	end
 end)
 
+--Handle enemy collision (no collide on merp)
+local function HandleCollide(tmthing, thing)
+	if thing.cd_frettime
+	and thing.cd_lastattacker
+	and (
+		thing.cd_lastattacker.mo == tmthing
+		or (tmthing.player and thing.cd_lastattacker.player == tmthing.player)
+	)
+		return false
+	end
+end
+addHook("MobjCollide", HandleCollide, MT_PLAYER)
+addHook("MobjMoveCollide", HandleCollide, MT_PLAYER)
+
 --Handle enemy damage (now with more merp)
 addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 	if target.cd_active
@@ -860,10 +874,6 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 				S_StartSound(target, sfx_s3k7b)
 
 				--Count number of merps, eventually retaliating
-				--Bosses are mean and do this immediately
-				if target.flags & MF_BOSS
-					target.cd_merpcount = 1
-				end
 				if not target.cd_merpcount
 					target.cd_merpcount = 3
 				else
