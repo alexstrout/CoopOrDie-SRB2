@@ -128,8 +128,9 @@ addHook("NetVars", function(network)
 	newclient = true --Only set on server and joining client(s)
 end)
 
---Sound to play this frame for teamlives-related noises
+--Sound to play next frame for teamlives-related noises
 local lifesfx = nil
+local lastlifesfx = nil
 
 --Cache of mobjthinker functions for quick lookup later
 local mobjthinkerfunc = {}
@@ -197,6 +198,7 @@ local function ResetCDInfo(ai)
 	ai.reborn = false --Just recently reborn from hitting end of level
 	ai.needsrevive = false --Spectating after hitting 0 lives
 	ai.awardshieldtime = 0 --Time after which a shield is awarded
+	ai.laststarpostnum = 0 --Last starpost we've reached
 end
 
 --Register pin with player for lookup later
@@ -485,29 +487,27 @@ local function PreThinkFrameFor(player)
 	--Handle lives here - note that useteamlives lags behind a tic
 	--This fixes some timing issues w/ foxBot if loaded first
 	if pci.useteamlives
-		if player.lives > 0
-		and pci.lastlives > 0
-			if player.lives != pci.lastlives
-				if teamlives < player.lives
-				and player != consoleplayer --Don't play if we're contributor
-				and leveltime and not lifesfx --Revive sound takes priority
-					--P_PlayLivesJingle(player)
-					lifesfx = sfx_3db09
-				end
-				teamlives = player.lives
-			else
-				player.lives = teamlives
+	and player.lives > 0
+	and pci.lastlives > 0
+		if player.lives != pci.lastlives
+			if teamlives < player.lives
+			and leveltime and not lifesfx --Revive sound takes priority
+			and player != consoleplayer --Don't play if we're contributor
+			and player != secondarydisplayplayer
+				lifesfx = sfx_3db09
 			end
-		--KO'd? Register for revive if not already
-		elseif player.lives <= 0
-		and pci.lastlives <= 0
-		and not pci.needsrevive
-			pci.needsrevive = true
-			table.insert(revivequeue, player)
-			PrintDownMessage(player)
+			teamlives = player.lives
+		else
+			player.lives = teamlives
 		end
+	--KO'd? Register for revive if not already
+	elseif player.lives <= 0
+	and pci.lastlives <= 0
+	and not pci.needsrevive
+		pci.needsrevive = true
+		table.insert(revivequeue, player)
+		PrintDownMessage(player)
 	end
-	pci.lastlives = player.lives
 	pci.useteamlives = (CV_CDDMFlags.value & 8) --Set based on dmflags
 		and not (player.ai and player.ai.synclives) --And foxBot sync
 
@@ -518,7 +518,7 @@ local function PreThinkFrameFor(player)
 			--Team revive
 			teamlives > 1
 			and (
-				player.lives > 0 --Party revive via 1up
+				player.lives > pci.lastlives --Party revive via 1up
 				or revivequeue[1] == player --Next in queue
 			)
 		)
@@ -529,12 +529,14 @@ local function PreThinkFrameFor(player)
 		)
 	)
 		pci.needsrevive = false
-		table.remove(revivequeue, 1) --Should flush queue on 1up
-		--Just broadcast message for bots
-		if not pci.useteamlives
-			PrintReviveMessage(player)
+		for k, v in pairs(revivequeue)
+			if v == player
+				table.remove(revivequeue, k)
+				break
+			end
+		end
 		--Decrement teamlives if not a 1up
-		elseif player.lives <= 0
+		if player.lives <= pci.lastlives
 			teamlives = max($ - 1, 1)
 			PrintReviveMessage(player)
 		--Otherwise print a party revive message once
@@ -546,6 +548,7 @@ local function PreThinkFrameFor(player)
 		player.playerstate = PST_REBORN
 		lifesfx = sfx_marioa --Takes priority over other lifesfx
 	end
+	pci.lastlives = player.lives
 
 	--Handle exiting here
 	if (player.pflags & PF_FINISHED)
@@ -558,6 +561,7 @@ local function PreThinkFrameFor(player)
 		--Reset starposts
 		player.starpostnum = 0
 		player.starposttime = 0
+		pci.laststarpostnum = 0
 
 		--If we're a bot, bump our leader to the top of the queue
 		--This prevents us from continually respawning at the exit
@@ -588,7 +592,7 @@ local function PreThinkFrameFor(player)
 		pci.reborn = false
 
 		--Carry over last rings and xtralife, unless we're a bot w/ ring sync
-		if leveltime and not (player.ai and player.ai.syncrings)
+		if not (player.ai and player.ai.syncrings)
 			player.rings = pci.lastrings
 			player.xtralife = pci.lastxtralife
 		end
@@ -613,11 +617,22 @@ local function PreThinkFrameFor(player)
 		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
 	end
 
+	--Revive someone if we've hit a new starpost?
+	if player.starpostnum > pci.laststarpostnum
+		teamlives = max($, 2)
+
+		--Set for all players to avoid coopstarposts issues
+		for p in players.iterate
+			if p.cdinfo
+				p.cdinfo.laststarpostnum = p.starpostnum
+			end
+		end
+	end
+
 	--Award shields if queued
 	if pci.awardshieldtime > 0
 		pci.awardshieldtime = $ - 1
 		if pci.awardshieldtime <= 0
-		and not (player.powers[pw_shield] & SH_NOSTACK)
 			--Pick from array of random shields
 			local shieldchoices = {
 				SH_ARMAGEDDON,
@@ -667,12 +682,13 @@ addHook("PreThinkFrame", function()
 	end
 
 	--Play any lifesfx set for this frame
-	if lifesfx
+	if lifesfx and lifesfx == lastlifesfx
 		if consoleplayer and consoleplayer.valid
 			S_StartSound(nil, lifesfx, consoleplayer)
 		end
 		lifesfx = nil
 	end
+	lastlifesfx = lifesfx
 
 	--Handle anything required for (re)joining clients
 	--Note that consoleplayer is server for a few tics on new clients
