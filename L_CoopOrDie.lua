@@ -244,9 +244,7 @@ local function SetupCDInfo(player)
 
 	--Create table, defining any vars that shouldn't be reset via ResetCDInfo
 	player.cdinfo = {
-		lastrings = 0, --Last ring count of player (used for end-of-level teleport)
-		lastxtralife = 0, --Last xtralife count of player (also used for eol teleport)
-		lastshield = SH_NONE, --Last shield of player (also used for eol teleport)
+		lastshield = SH_NONE, --Last shield of player (used for end-of-level teleport)
 		lastlives = player.lives, --Last life count of player (used to sync w/ team)
 		useteamlives = false --Current sync setting for teamlives
 	}
@@ -554,9 +552,7 @@ local function PreThinkFrameFor(player)
 	--Handle exiting here
 	if (player.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
-		--Record last rings, xtralife, and shield if applicable
-		pci.lastrings = player.rings
-		pci.lastxtralife = player.xtralife
+		--Record last shield if applicable
 		pci.lastshield = player.powers[pw_shield]
 
 		--Reset starposts
@@ -600,13 +596,17 @@ local function PreThinkFrameFor(player)
 	if pci.reborn
 		pci.reborn = false
 
-		--Carry over last rings and xtralife, unless we're a bot w/ ring sync
-		if not (player.ai and player.ai.syncrings)
-			player.rings = pci.lastrings
-			player.xtralife = pci.lastxtralife
+		--Rings don't carry over - instead, we get reborn w/ bonus rings
+		--This keeps things simple and also means we can re-earn extra lives
+		--This also stacks with ring-sync bots and that's ok
+		player.rings = $ + 20
+
+		--We'll also get additional bonus rings if we have all emeralds
+		--This does not stack with ring-sync bots since that would be ridiculous
+		if All7Emeralds(emeralds)
+		and not (player.ai and player.ai.syncrings)
+			player.rings = $ + 20
 		end
-		pci.lastrings = 0
-		pci.lastxtralife = 0
 
 		--Carry over shield, if applicable - otherwise queue shield award
 		if (pci.lastshield & SH_NOSTACK)
@@ -621,6 +621,7 @@ local function PreThinkFrameFor(player)
 
 		--Woosh!
 		if player.realmo and player.realmo.valid
+		and (leveltime or player == consoleplayer)
 			S_StartSound(player.realmo, sfx_mixup)
 		end
 		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
@@ -996,6 +997,15 @@ addHook("TouchSpecial", function(special, toucher)
 		return true
 	end
 end, MT_BLUESPHERE)
+
+--Handle (re)spawning for players
+addHook("PlayerSpawn", function(player)
+	--Players get awards w/ all emeralds since it's more difficult
+	if All7Emeralds(emeralds)
+		SetupCDInfo(player) --For first-time joiners; safe if existing
+		player.cdinfo.reborn = true --No effect on eol teleport
+	end
+end)
 
 --Handle sudden quitting for players
 addHook("PlayerQuit", function(player, reason)
