@@ -199,6 +199,7 @@ local function ResetCDInfo(ai)
 	ai.needsrevive = false --Spectating after hitting 0 lives
 	ai.awardshieldtime = 0 --Time after which a shield is awarded
 	ai.laststarpostnum = 0 --Last starpost we've reached
+	ai.finished = false --Previously finished level at some point
 end
 
 --Register pin with player for lookup later
@@ -578,6 +579,9 @@ local function PreThinkFrameFor(player)
 			end
 		end
 
+		--Remember that we finished level for later
+		pci.finished = true
+
 		--Unset our finished state and queue for respawn
 		player.pflags = $ & ~PF_FINISHED
 		player.playerstate = PST_REBORN
@@ -587,6 +591,11 @@ local function PreThinkFrameFor(player)
 		--Revive someone if needed
 		teamlives = max($, 2)
 		return
+	--Reapply finished state if we previously finished level
+	elseif pci.finished
+	and enemyct >= targetenemyct
+		P_DoPlayerFinish(player)
+		pci.finished = false
 	end
 	if pci.reborn
 		pci.reborn = false
@@ -1022,19 +1031,19 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 		hudtext[i + 1] = namecolor .. $
 	end
 
-	--Spectating or dead?
+	--Spectating or dead? (will only display if AI leader or pinned)
 	local pmo = player.realmo
 	if player.spectator
 	or not (pmo and pmo.valid)
 	or pmo.health <= 0
 		hudtext[i] = "\x86" .. "Dead.."
-		hudtext[i + 2] = ""
-		hudtext[i + 3] = ""
-		return i + 4
 	end
+	hudtext[i + 2] = ""
+	hudtext[i + 3] = ""
 
 	local bmo = stplyr.realmo
 	if bmo and bmo.valid
+	and pmo and pmo.valid
 		--Distance (pre-scaled for approximate drawing purposes - can get very large)
 		local zdist = (pmo.z - bmo.z) / bmo.scale
 		local dist = FixedHypot(
@@ -1084,19 +1093,19 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 			end
 		end
 		hudtext[i + 3] = "\x86" .. dir
+	end
 
-		--Keep simple foxBot concepts in case player prefers only this hud
-		if stplyr.ai
-		and player == stplyr.ai.leader
-			if stplyr.ai.playernosight
-				hudtext[i + 2] = "\x87" .. string.sub($, 2)
-			end
-			if stplyr.ai.cmd_time > 0
-			and stplyr.ai.cmd_time < 3 * TICRATE
-				hudtext[i + 3] = "\x81" + "AI control in " .. stplyr.ai.cmd_time / TICRATE + 1 .. "..."
-			elseif stplyr.ai.doteleport
-				hudtext[i + 3] = "\x84Teleporting..."
-			end
+	--Keep simple foxBot concepts in case player prefers only this hud
+	if stplyr.ai
+	and player == stplyr.ai.leader
+		if stplyr.ai.playernosight
+			hudtext[i + 2] = "\x87" .. string.sub($, 2)
+		end
+		if stplyr.ai.cmd_time > 0
+		and stplyr.ai.cmd_time < 3 * TICRATE
+			hudtext[i + 3] = "\x81" + "AI control in " .. stplyr.ai.cmd_time / TICRATE + 1 .. "..."
+		elseif stplyr.ai.doteleport
+			hudtext[i + 3] = "\x84Teleporting..."
 		end
 	end
 	return i + 4
