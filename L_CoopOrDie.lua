@@ -1,5 +1,5 @@
 --[[
-	Coop or Die! v0.x by fox: https://taraxis.com/
+	Coop or Die! v1.0 by fox: https://taraxis.com/
 
 	--------------------------------------------------------------------------------
 	Copyright (c) 2021 Alex Strout
@@ -24,7 +24,9 @@
 
 	--------------------------------------------------------------------------------
 	Extensively draws code from foxBot,
-	Copyright (c) 2021 Alex Strout and CobaltBW - MIT License
+	Copyright (c) 2021 Alex Strout and Shane Ellis
+
+	See license-foxBot.txt or:
 	https://github.com/alexstrout/foxBot-SRB2/blob/master/license.txt
 ]]
 
@@ -1266,7 +1268,7 @@ end, "game")
 ]]
 local function BotHelp(player)
 	print(
-		"\x87 Coop or Die! v0.x: 2021-XX-XX",
+		"\x87 Coop or Die! v1.0: 2021-05-09",
 		"",
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
