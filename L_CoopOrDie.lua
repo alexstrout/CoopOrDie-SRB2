@@ -1,5 +1,5 @@
 --[[
-	Coop or Die! v1.0 by fox: https://taraxis.com/
+	Coop or Die! v1.1 by fox: https://taraxis.com/
 
 	--------------------------------------------------------------------------------
 	Copyright (c) 2021 Alex Strout
@@ -106,9 +106,15 @@ local teamlives = 0
 local revivequeue = {}
 local lastmapnum = 0
 
+--Level times (for NoReload reset detection)
+local levelstarttime = 0
+local lastleveltime = 0
+
 --Current percentage of enemies destroyed in stage
 local enemyct = 0
 local targetenemyct = 0
+local pendingenemyct = 0
+local pendingenemycttime = 0
 local notifythreshold = 0
 
 --Current list of "active" mobj thinkers
@@ -123,8 +129,12 @@ addHook("NetVars", function(network)
 	teamlives = network($)
 	revivequeue = network($)
 	lastmapnum = network($)
+	levelstarttime = network($)
+	lastleveltime = network($)
 	enemyct = network($)
 	targetenemyct = network($)
+	pendingenemyct = network($)
+	pendingenemycttime = network($)
 	notifythreshold = network($)
 	mobjthinkers = network($)
 	newclient = true --Only set on server and joining client(s)
@@ -197,10 +207,8 @@ end
 ]]
 --Reset (or define) all CDInfo vars to their initial values
 local function ResetCDInfo(ai)
-	ai.reborn = false --Just recently reborn from hitting end of level
 	ai.needsrevive = false --Spectating after hitting 0 lives
 	ai.awardshieldtime = 0 --Time after which a shield is awarded
-	ai.laststarpostnum = 0 --Last starpost we've reached
 	ai.finished = false --Previously finished level at some point
 end
 
@@ -248,7 +256,9 @@ local function SetupCDInfo(player)
 	player.cdinfo = {
 		lastshield = SH_NONE, --Last shield of player (used for end-of-level teleport)
 		lastlives = player.lives, --Last life count of player (used to sync w/ team)
-		useteamlives = false --Current sync setting for teamlives
+		useteamlives = false, --Current sync setting for teamlives
+		reborn = false, --Just recently reborn from hitting end of level
+		laststarpostnum = player.starpostnum --Last starpost we've reached
 	}
 	ResetCDInfo(player.cdinfo) --Define the rest w/ their respective values
 end
@@ -491,14 +501,17 @@ local function PreThinkFrameFor(player)
 	and player.lives > 0
 	and pci.lastlives > 0
 		if player.lives != pci.lastlives
-			if teamlives < player.lives
-			and leveltime and not lifesfx --Revive sound takes priority
-			and player != consoleplayer --Don't play if we're contributor
-			and player != secondarydisplayplayer
+			teamlives = player.lives
+		elseif leveltime > levelstarttime
+			if teamlives > player.lives
+			and not lifesfx --Revive sound takes priority
+			and (
+				--Play sound only for local players
+				player == consoleplayer
+				or player == secondarydisplayplayer
+			)
 				lifesfx = sfx_3db09
 			end
-			teamlives = player.lives
-		else
 			player.lives = teamlives
 		end
 	--KO'd? Register for revive if not already
@@ -577,6 +590,9 @@ local function PreThinkFrameFor(player)
 			end
 		end
 
+		--Increment enemyct as a failsafe for custom exit triggers
+		enemyct = $ + 1
+
 		--Remember that we finished level for later
 		pci.finished = true
 
@@ -590,7 +606,9 @@ local function PreThinkFrameFor(player)
 		teamlives = max($, 2)
 		return
 	--Reapply finished state if we previously finished level
+	--Note this is cleared on map reset so we don't cheat the time bonus
 	elseif pci.finished
+	and targetenemyct > 0
 	and enemyct >= targetenemyct
 		P_DoPlayerFinish(player)
 		pci.finished = false
@@ -615,7 +633,7 @@ local function PreThinkFrameFor(player)
 		and pci.lastshield != SH_PINK
 			P_SwitchShield(player, pci.lastshield)
 			pci.lastshield = SH_NONE
-		elseif not leveltime --Randomize a bit on level start
+		elseif leveltime == levelstarttime --Randomize a bit on level start
 			pci.awardshieldtime = P_RandomByte() * TICRATE / 170
 		else
 			pci.awardshieldtime = TICRATE
@@ -623,7 +641,7 @@ local function PreThinkFrameFor(player)
 
 		--Woosh!
 		if player.realmo and player.realmo.valid
-		and (leveltime or player == consoleplayer)
+		and (leveltime > levelstarttime or player == consoleplayer)
 			S_StartSound(player.realmo, sfx_mixup)
 		end
 		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
@@ -693,6 +711,29 @@ addHook("PreThinkFrame", function()
 		end
 	end
 
+	--Handle any pendingenemyct
+	if pendingenemycttime > 0
+		pendingenemycttime = $ - 1
+		if pendingenemycttime <= 0
+			enemyct = $ + pendingenemyct
+			pendingenemyct = 0
+
+			--Make noises! And revive players
+			if notifythreshold > 0 and targetenemyct > 0
+			and enemyct * 100 / targetenemyct >= notifythreshold
+				notifythreshold = GetNextNotifyThreshold($)
+				teamlives = max($, 2)
+				if consoleplayer and consoleplayer.valid
+					if enemyct >= targetenemyct
+						S_StartSound(nil, sfx_ideya, consoleplayer)
+					else
+						S_StartSound(nil, sfx_3db06, consoleplayer)
+					end
+				end
+			end
+		end
+	end
+
 	--Play any lifesfx set for this frame
 	if lifesfx and lifesfx == lastlifesfx
 		if consoleplayer and consoleplayer.valid
@@ -717,22 +758,31 @@ addHook("PreThinkFrame", function()
 			end
 		end
 	end
+
+	--Record lastleveltime, for reset detection
+	lastleveltime = leveltime
 end)
 
 --Handle MapChange for resetting things
-addHook("MapChange", function(mapnum)
+local function HandleMapChange(mapnum)
 	for player in players.iterate
 		if player.cdinfo
 			ResetCDInfo(player.cdinfo)
 
+			--Reset a few more things if different map
+			if mapnum != lastmapnum
+				player.cdinfo.reborn = false
+				player.cdinfo.laststarpostnum = 0
 			--Hand out shields if restarting map from death
-			--Also covers teleport mechanic for singleplayer
-			if mapnum == lastmapnum
-			and (not multiplayer or teamlives <= 1)
+			elseif teamlives <= 1
 				player.cdinfo.reborn = true
 			end
 		end
 	end
+
+	--Reset level times
+	levelstarttime = 0
+	lastleveltime = 0
 
 	--Reset enemy count, unless we're restarting the map
 	if mapnum != lastmapnum
@@ -741,6 +791,8 @@ addHook("MapChange", function(mapnum)
 		enemyct = $ / 2 --Unchanged for singleplayer
 	end
 	targetenemyct = 0
+	pendingenemyct = 0
+	pendingenemycttime = 0
 	notifythreshold = -1
 
 	--Reset revivequeue / mobjthinkers
@@ -748,9 +800,10 @@ addHook("MapChange", function(mapnum)
 	mobjthinkers = {}
 	collectgarbage()
 
-	--Reset teamlives if exhausted
-	teamlives = max($, 3)
-end)
+	--Ensure teamlives is a sane value
+	teamlives = max($, 1)
+end
+addHook("MapChange", HandleMapChange)
 
 --Handle MapLoad for post-load actions
 local PostMapLoadFor = 3
@@ -789,7 +842,7 @@ mobjthinkerfunc[PostMapLoadFor] = function(mobj)
 		end
 	end
 end
-addHook("MapLoad", function(mapnum)
+local function HandleMapLoad(mapnum)
 	if G_IsSpecialStage()
 		--Tighten special stage time!
 		if CV_CDDMFlags.value & 4
@@ -804,13 +857,17 @@ addHook("MapLoad", function(mapnum)
 	end
 	lastmapnum = mapnum
 
+	--Record level start time (for NoReload levels)
+	levelstarttime = leveltime
+
 	--Handle any post-MapLoad logic - just use mobjthinkers for this
 	--Server may be nil when exiting to title, but should otherwise always be valid
 	if server and server.valid
 		mobjthinkers[server] = PostMapLoadFor
 		server.cd_counttime = TICRATE
 	end
-end)
+end
+addHook("MapLoad", HandleMapLoad)
 
 --Handle enemy spawning
 addHook("MobjSpawn", function(mobj)
@@ -923,7 +980,9 @@ end)
 local function HandleDeath(target, inflictor, source, damagetype)
 	--Need to check valid as MobjRemoved may fire outside level
 	--Also check leveltime in case any enemies are removed at level start
-	if leveltime and target.valid and target.cd_active
+	--(+ 1 tic incase we're spamming retry for some reason)
+	if leveltime > levelstarttime + 1
+	and target.valid and target.cd_active
 		target.cd_active = false
 		target.cd_lastattacker = nil
 		mobjthinkers[target] = nil
@@ -933,21 +992,8 @@ local function HandleDeath(target, inflictor, source, damagetype)
 		target.color = SKINCOLOR_NONE
 
 		--Increment enemy count!
-		enemyct = $ + target.info.spawnhealth
-
-		--Make noises! And revive players
-		if notifythreshold > 0 and targetenemyct > 0
-		and enemyct * 100 / targetenemyct >= notifythreshold
-			notifythreshold = GetNextNotifyThreshold($)
-			teamlives = max($, 2)
-			if consoleplayer and consoleplayer.valid
-				if enemyct >= targetenemyct
-					S_StartSound(nil, sfx_ideya, consoleplayer)
-				else
-					S_StartSound(nil, sfx_3db06, consoleplayer)
-				end
-			end
-		end
+		pendingenemyct = $ + target.info.spawnhealth
+		pendingenemycttime = TICRATE / 2
 	end
 end
 addHook("MobjDeath", HandleDeath)
@@ -1006,6 +1052,17 @@ addHook("PlayerSpawn", function(player)
 	if All7Emeralds(emeralds)
 		SetupCDInfo(player) --For first-time joiners; safe if existing
 		player.cdinfo.reborn = true --No effect on eol teleport
+	end
+
+	--Handle NoReload resets
+	if leveltime < lastleveltime
+		HandleMapChange(lastmapnum)
+		HandleMapLoad(lastmapnum)
+	end
+
+	--Match teamlives to (highest) expected player lives at level start
+	if leveltime == levelstarttime
+		teamlives = max($, player.lives)
 	end
 end)
 
@@ -1136,6 +1193,9 @@ hud.add(function(v, stplyr, cam)
 			i = enemyct * 100 / targetenemyct
 			hudtext[1] = i .. "%"
 			hudtext[2] = "Enemy Goal:"
+			if pendingenemyct
+				hudtext[1] = $ .. " \x83+" .. pendingenemyct .. "x"
+			end
 			if i < 25
 				hudtext[1] = "\x85" .. $
 			elseif i < 50
@@ -1145,7 +1205,7 @@ hud.add(function(v, stplyr, cam)
 			elseif i < 100
 				hudtext[1] = "\x8A" .. $
 			else
-				hudtext[1] = "\x83" .. "Done!"
+				hudtext[1] = "\x83" .. "DONE!"
 			end
 		else
 			hudtext[1] = ""
@@ -1230,8 +1290,13 @@ hud.add(function(v, stplyr, cam)
 	--This is messy and made more sense in foxBot, but oh well
 	for k, s in ipairs(hudtext)
 		if k & 1
-			v.drawString(320 - x - 30 * scale, y, s,
-				V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size)
+			if k == 1 --Enemy goal % (e.g. "26% +1x")
+				v.drawString(320 - x - 30 * scale, y, s,
+					V_SNAPTOTOP | V_SNAPTORIGHT | V_ALLOWLOWERCASE | v.localTransFlag(), size)
+			else
+				v.drawString(320 - x - 30 * scale, y, s,
+					V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size)
+			end
 		else
 			if k > 2 and (k + 2) % 4 == 0 --Direction indicator
 			and string.len(s) < 4 --Displaying a direction
@@ -1268,7 +1333,7 @@ end, "game")
 ]]
 local function BotHelp(player)
 	print(
-		"\x87 Coop or Die! v1.0: 2021-05-09",
+		"\x87 Coop or Die! v1.1: 2021-xx-xx",
 		"",
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",

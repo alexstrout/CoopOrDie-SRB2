@@ -1,0 +1,13 @@
+v1.1 (2021-xx-xx):
+------------------
+* Fix potentially getting stuck in a "warp loop" on custom level exit triggers
+* Fix team lives not honoring startinglives in multiplayer / saved life count in singleplayer
+* Fix Enemy Goal getting incorrectly set after retrying a NoReload level
+* Fix always getting a reward shield in singleplayer after retrying a level
+* Fix starposts randomly granting team lives after retrying a level
+* Allow the team life sound (S3D Chirp) to play any time we've gained a team life
+* Add a minor coop HUD notification when enemies are defeated
+
+v1.0 (2021-05-09):
+------------------
+* Initial release

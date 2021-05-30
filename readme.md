@@ -1,4 +1,4 @@
-Coop or Die! v1.0
+Coop or Die! v1.1 ([Changelog](changelog.md))
 =================
 An experiment in cooperative gameplay mechanics for a 3D platformer (in this case SRB2).
 
@@ -34,4 +34,4 @@ Use `cdhelp` to display this section in-game at any time.
 * `cd_hudmaxplayers` - Maximum # of players to draw on HUD
 * `pinplayer <player>` - Pin *player* to HUD
 * `unpinplayer <player>` - Unpin *player* from HUD *("all" = all players)*
-* `listplayers` - List active players"
+* `listplayers` - List active players
