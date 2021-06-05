@@ -408,6 +408,12 @@ local function GetNextNotifyThreshold(threshold)
 	return 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
 end
 
+--Safely increment enemyct via pendingenemyct
+local function IncrementEnemyCount(amount)
+	pendingenemyct = $ + amount
+	pendingenemycttime = TICRATE / 2
+end
+
 --Determine if we're a valid enemy for CD purposes
 local function ValidEnemy(mobj)
 	return (mobj.flags & (MF_BOSS | MF_ENEMY))
@@ -520,7 +526,13 @@ local function PreThinkFrameFor(player)
 	and not pci.needsrevive
 		pci.needsrevive = true
 		table.insert(revivequeue, player)
-		PrintDownMessage(player)
+
+		--Do teamlives mechanics if enabled; otherwise, just reset to 1
+		if (CV_CDDMFlags.value & 8)
+			PrintDownMessage(player)
+		else
+			teamlives = 1
+		end
 	end
 	pci.useteamlives = (CV_CDDMFlags.value & 8) --Set based on dmflags
 		and not (player.ai and player.ai.synclives) --And foxBot sync
@@ -549,18 +561,23 @@ local function PreThinkFrameFor(player)
 				break
 			end
 		end
-		--Decrement teamlives if not a 1up
-		if player.lives <= pci.lastlives
-			teamlives = max($ - 1, 1)
-			PrintReviveMessage(player)
-		--Otherwise print a party revive message once
-		elseif table.maxn(revivequeue) == 0
-			PrintReviveMessage()
+		--Do teamlives mechanics if enabled; otherwise, just reset to 1
+		if (CV_CDDMFlags.value & 8)
+			--Decrement teamlives if not a 1up
+			if player.lives <= pci.lastlives
+				teamlives = max($ - 1, 1)
+				PrintReviveMessage(player)
+			--Otherwise print a party revive message once
+			elseif table.maxn(revivequeue) == 0
+				PrintReviveMessage()
+			end
+			lifesfx = sfx_marioa --Takes priority over other lifesfx
+		else
+			teamlives = 1
 		end
 		player.lives = teamlives
 		player.spectator = false
 		player.playerstate = PST_REBORN
-		lifesfx = sfx_marioa --Takes priority over other lifesfx
 	end
 	pci.lastlives = player.lives
 
@@ -591,7 +608,7 @@ local function PreThinkFrameFor(player)
 		end
 
 		--Increment enemyct as a failsafe for custom exit triggers
-		enemyct = $ + 1
+		IncrementEnemyCount(1)
 
 		--Remember that we finished level for later
 		pci.finished = true
@@ -715,6 +732,7 @@ addHook("PreThinkFrame", function()
 	if pendingenemycttime > 0
 		pendingenemycttime = $ - 1
 		if pendingenemycttime <= 0
+		or pendingenemyct + enemyct >= targetenemyct
 			enemyct = $ + pendingenemyct
 			pendingenemyct = 0
 
@@ -992,8 +1010,7 @@ local function HandleDeath(target, inflictor, source, damagetype)
 		target.color = SKINCOLOR_NONE
 
 		--Increment enemy count!
-		pendingenemyct = $ + target.info.spawnhealth
-		pendingenemycttime = TICRATE / 2
+		IncrementEnemyCount(target.info.spawnhealth)
 	end
 end
 addHook("MobjDeath", HandleDeath)
