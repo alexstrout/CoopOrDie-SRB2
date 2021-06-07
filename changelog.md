@@ -7,6 +7,8 @@ v1.1 (2021-xx-xx):
 * Fix starposts randomly granting team lives after retrying a level
 * Allow the team life sound (S3D Chirp) to play any time we've gained a team life
 * Add a minor coop HUD notification when enemies are defeated
+* Add separate cd_teamlives option for team life sharing (instead of it being a cd_dmflags flag)
+* Add cd_emeraldbonus option for bonus ring / shield award on spawn w/ all emeralds
 
 v1.0 (2021-05-09):
 ------------------

@@ -58,9 +58,21 @@ local CV_CDEnemyClearMax = CV_RegisterVar({
 })
 local CV_CDDMFlags = CV_RegisterVar({
 	name = "cd_dmflags",
-	defaultvalue = "15",
+	defaultvalue = "7",
 	flags = CV_NETVAR|CV_SHOWMODIF,
-	PossibleValue = {MIN = 0, MAX = 31}
+	PossibleValue = {MIN = 0, MAX = 15}
+})
+local CV_CDTeamLives = CV_RegisterVar({
+	name = "cd_teamlives",
+	defaultvalue = "On",
+	flags = CV_NETVAR|CV_SHOWMODIF,
+	PossibleValue = CV_OnOff
+})
+local CV_CDEmeraldBonus = CV_RegisterVar({
+	name = "cd_emeraldbonus",
+	defaultvalue = "On",
+	flags = CV_NETVAR|CV_SHOWMODIF,
+	PossibleValue = CV_OnOff
 })
 local CV_CDShowHud = CV_RegisterVar({
 	name = "cd_showhud",
@@ -528,13 +540,13 @@ local function PreThinkFrameFor(player)
 		table.insert(revivequeue, player)
 
 		--Do teamlives mechanics if enabled; otherwise, just reset to 1
-		if (CV_CDDMFlags.value & 8)
+		if CV_CDTeamLives.value
 			PrintDownMessage(player)
 		else
 			teamlives = 1
 		end
 	end
-	pci.useteamlives = (CV_CDDMFlags.value & 8) --Set based on dmflags
+	pci.useteamlives = CV_CDTeamLives.value --Set based on setting
 		and not (player.ai and player.ai.synclives) --And foxBot sync
 
 	--Handle revives
@@ -562,7 +574,7 @@ local function PreThinkFrameFor(player)
 			end
 		end
 		--Do teamlives mechanics if enabled; otherwise, just reset to 1
-		if (CV_CDDMFlags.value & 8)
+		if CV_CDTeamLives.value
 			--Decrement teamlives if not a 1up
 			if player.lives <= pci.lastlives
 				teamlives = max($ - 1, 1)
@@ -642,6 +654,7 @@ local function PreThinkFrameFor(player)
 		--This does not stack with ring-sync bots since that would be ridiculous
 		if All7Emeralds(emeralds)
 		and not (player.ai and player.ai.syncrings)
+		and CV_CDEmeraldBonus.value
 			player.rings = $ + 20
 		end
 
@@ -1018,7 +1031,7 @@ addHook("MobjRemoved", HandleDeath)
 
 --Handle player death
 addHook("MobjDeath", function(target, inflictor, source, damagetype)
-	if CV_CDDMFlags.value & 16
+	if CV_CDDMFlags.value & 8
 		for mobj in mobjs.iterate()
 			if mobj.cd_lastattacker
 			and (
@@ -1067,6 +1080,7 @@ end, MT_BLUESPHERE)
 addHook("PlayerSpawn", function(player)
 	--Players get awards w/ all emeralds since it's more difficult
 	if All7Emeralds(emeralds)
+	and CV_CDEmeraldBonus.value
 		SetupCDInfo(player) --For first-time joiners; safe if existing
 		player.cdinfo.reborn = true --No effect on eol teleport
 	end
@@ -1355,13 +1369,14 @@ local function BotHelp(player)
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
 		"\x80  cd_enemyclearmax - Maximum # of enemies for level completion",
-		"\x80  cd_dmflags - Difficulty modifier flags:",
+		"\x80  cd_dmflags - Difficulty modifier flags",
 		"\x86   (1 = Enemies require 2+ hits from different players)",
 		"\x86   (2 = Spheres require 2 pickups from different players)",
 		"\x86   (4 = Special Stages restrict time based on player count)",
-		"\x86   (8 = Team lives are shared using 1up revive mechanics)",
-		"\x86   (16 = Players reset their tagged enemy hits on death)",
+		"\x86   (8 = Players reset their tagged enemy hits on death)",
 		"\x83   Note: These options can be combined by adding them together!",
+		"\x80  cd_teamlives - Share team lives using goal-driven revive mechanics?",
+		"\x80  cd_emeraldbonus - Award ring / shield bonuses on spawn w/ all emeralds?",
 		"",
 		"\x87 MP Client:",
 		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",

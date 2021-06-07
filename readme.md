@@ -21,13 +21,14 @@ Use `cdhelp` to display this section in-game at any time.
 **MP Server Admin:**
 * `cd_enemyclearpct` - Required % of enemies for level completion
 * `cd_enemyclearmax` - Maximum # of enemies for level completion
-* `cd_dmflags` - Difficulty modifier flags:
+* `cd_dmflags` - Difficulty modifier flags
   * *(1 = Enemies require 2+ hits from different players)*
   * *(2 = Spheres require 2 pickups from different players)*
   * *(4 = Special Stages restrict time based on player count)*
-  * *(8 = Team lives are shared using 1up revive mechanics)*
-  * *(16 = Players reset their tagged enemy hits on death)*
+  * *(8 = Players reset their tagged enemy hits on death)*
   * Note: These options can be combined by adding them together!
+* `cd_teamlives` - Share team lives using goal-driven revive mechanics?
+* `cd_emeraldbonus` - Award ring / shield bonuses on spawn w/ all emeralds?
 
 **MP Client:**
 * `cd_showhud` - Draw CoopOrDie info to HUD?
