@@ -270,6 +270,7 @@ local function SetupCDInfo(player)
 		lastlives = player.lives, --Last life count of player (used to sync w/ team)
 		useteamlives = false, --Current sync setting for teamlives
 		reborn = false, --Just recently reborn from hitting end of level
+		reexittimeout = 0, --If reborn again in this time, end level instead of warp
 		laststarpostnum = player.starpostnum --Last starpost we've reached
 	}
 	ResetCDInfo(player.cdinfo) --Define the rest w/ their respective values
@@ -418,12 +419,6 @@ local function GetNextNotifyThreshold(threshold)
 		return -1
 	end
 	return 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
-end
-
---Safely increment enemyct via pendingenemyct
-local function IncrementEnemyCount(amount)
-	pendingenemyct = $ + amount
-	pendingenemycttime = TICRATE / 2
 end
 
 --Determine if we're a valid enemy for CD purposes
@@ -596,6 +591,14 @@ local function PreThinkFrameFor(player)
 	--Handle exiting here
 	if (player.pflags & PF_FINISHED)
 	and enemyct < targetenemyct
+		--Short-circuit failsafe for custom exit triggers
+		if pci.reexittimeout > 0
+			pci.reexittimeout = 0
+			pendingenemyct = targetenemyct - enemyct
+			pendingenemycttime = 1 --Process this tic
+			return
+		end
+
 		--Record last shield if applicable
 		pci.lastshield = player.powers[pw_shield]
 
@@ -619,9 +622,6 @@ local function PreThinkFrameFor(player)
 			end
 		end
 
-		--Increment enemyct as a failsafe for custom exit triggers
-		IncrementEnemyCount(1)
-
 		--Remember that we finished level for later
 		pci.finished = true
 
@@ -629,6 +629,7 @@ local function PreThinkFrameFor(player)
 		player.pflags = $ & ~PF_FINISHED
 		player.playerstate = PST_REBORN
 		pci.reborn = true
+		pci.reexittimeout = TICRATE / 2
 		PrintRebornMessage(player)
 
 		--Revive someone if needed
@@ -641,6 +642,8 @@ local function PreThinkFrameFor(player)
 	and enemyct >= targetenemyct
 		P_DoPlayerFinish(player)
 		pci.finished = false
+	elseif pci.reexittimeout > 0
+		pci.reexittimeout = $ - 1
 	end
 	if pci.reborn
 		pci.reborn = false
@@ -1023,7 +1026,8 @@ local function HandleDeath(target, inflictor, source, damagetype)
 		target.color = SKINCOLOR_NONE
 
 		--Increment enemy count!
-		IncrementEnemyCount(target.info.spawnhealth)
+		pendingenemyct = $ + target.info.spawnhealth
+		pendingenemycttime = TICRATE / 2
 	end
 end
 addHook("MobjDeath", HandleDeath)
