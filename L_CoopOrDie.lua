@@ -218,10 +218,12 @@ end
 	--------------------------------------------------------------------------------
 ]]
 --Reset (or define) all CDInfo vars to their initial values
-local function ResetCDInfo(ai)
-	ai.needsrevive = false --Spectating after hitting 0 lives
-	ai.awardshieldtime = 0 --Time after which a shield is awarded
-	ai.finished = false --Previously finished level at some point
+local function ResetCDInfo(player)
+	local pci = player.cdinfo
+	pci.needsrevive = false --Spectating after hitting 0 lives
+	pci.awardshieldtime = 0 --Time after which a shield is awarded
+	pci.finished = false --Previously finished level at some point
+	pci.laststarpostnum = player.starpostnum --Last starpost we've reached
 end
 
 --Register pin with player for lookup later
@@ -270,10 +272,9 @@ local function SetupCDInfo(player)
 		lastlives = player.lives, --Last life count of player (used to sync w/ team)
 		useteamlives = false, --Current sync setting for teamlives
 		reborn = false, --Just recently reborn from hitting end of level
-		reexittimeout = 0, --If reborn again in this time, end level instead of warp
-		laststarpostnum = player.starpostnum --Last starpost we've reached
+		reexittimeout = 0 --If reborn again in this time, end level instead of warp
 	}
-	ResetCDInfo(player.cdinfo) --Define the rest w/ their respective values
+	ResetCDInfo(player) --Define the rest w/ their respective values
 end
 
 --Destroy CDInfo table (and any child tables / objects) for a given player, if needed
@@ -801,12 +802,11 @@ end)
 local function HandleMapChange(mapnum)
 	for player in players.iterate
 		if player.cdinfo
-			ResetCDInfo(player.cdinfo)
+			ResetCDInfo(player)
 
 			--Reset a few more things if different map
 			if mapnum != lastmapnum
 				player.cdinfo.reborn = false
-				player.cdinfo.laststarpostnum = 0
 			--Hand out shields if restarting map from death
 			elseif teamlives <= 1
 				player.cdinfo.reborn = true
