@@ -891,9 +891,6 @@ local function HandleMapLoad(mapnum)
 	end
 	lastmapnum = mapnum
 
-	--Record level start time (for NoReload levels)
-	levelstarttime = leveltime
-
 	--Handle any post-MapLoad logic - just use mobjthinkers for this
 	--Server may be nil when exiting to title, but should otherwise always be valid
 	if server and server.valid
@@ -1093,6 +1090,12 @@ addHook("PlayerSpawn", function(player)
 	if leveltime < lastleveltime
 		HandleMapChange(lastmapnum)
 		HandleMapLoad(lastmapnum)
+	end
+
+	--Record level start time (for NoReload levels)
+	--This could be in MapLoad, but dedicated servers start w/ no players
+	if levelstarttime == 0
+		levelstarttime = leveltime
 	end
 
 	--Match teamlives to (highest) expected player lives at level start
