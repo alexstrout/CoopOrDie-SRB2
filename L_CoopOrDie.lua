@@ -224,6 +224,7 @@ local function ResetCDInfo(player)
 	pci.awardshieldtime = 0 --Time after which a shield is awarded
 	pci.finished = false --Previously finished level at some point
 	pci.laststarpostnum = player.starpostnum --Last starpost we've reached
+	pci.reexittimeout = 0 --If reborn again in this time, end level instead of warp
 end
 
 --Register pin with player for lookup later
@@ -271,8 +272,7 @@ local function SetupCDInfo(player)
 		lastshield = SH_NONE, --Last shield of player (used for end-of-level teleport)
 		lastlives = player.lives, --Last life count of player (used to sync w/ team)
 		useteamlives = false, --Current sync setting for teamlives
-		reborn = false, --Just recently reborn from hitting end of level
-		reexittimeout = 0 --If reborn again in this time, end level instead of warp
+		reborn = false --Just recently reborn from hitting end of level
 	}
 	ResetCDInfo(player) --Define the rest w/ their respective values
 end
