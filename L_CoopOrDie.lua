@@ -1371,7 +1371,7 @@ end, "game")
 ]]
 local function BotHelp(player)
 	print(
-		"\x87 Coop or Die! v1.1: 2021-xx-xx",
+		"\x87 Coop or Die! v1.1: 2021-06-11",
 		"",
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",

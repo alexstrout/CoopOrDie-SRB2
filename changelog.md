@@ -1,4 +1,4 @@
-v1.1 (2021-xx-xx):
+v1.1 (2021-06-11):
 ------------------
 * Fix potentially getting stuck in a "warp loop" on custom level exit triggers
 * Fix team lives not honoring startinglives in multiplayer / saved life count in singleplayer
