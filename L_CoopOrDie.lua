@@ -98,6 +98,7 @@ local CV_CDHudMaxPlayers = CV_RegisterVar({
 freeslot(
 	"MT_FOXCD_SCOREBOP"
 )
+---@diagnostic disable-next-line: missing-fields
 mobjinfo[MT_FOXCD_SCOREBOP] = {
 	spawnstate = S_INVISIBLE,
 	radius = FRACUNIT,
@@ -244,7 +245,7 @@ local function UnregisterPinnedPlayer(player, pin)
 	end
 	local retVal = player.cd_pinnedplayers[#pin + 1] != nil
 	player.cd_pinnedplayers[#pin + 1] = nil
-	if table.maxn(player.cd_pinnedplayers) < 1 then
+	if #player.cd_pinnedplayers < 1 then
 		player.cd_pinnedplayers = nil
 	end
 	return retVal
@@ -576,7 +577,7 @@ local function PreThinkFrameFor(player)
 				teamlives = max($ - 1, 1)
 				PrintReviveMessage(player)
 			--Otherwise print a party revive message once
-			elseif table.maxn(revivequeue) == 0 then
+			elseif #revivequeue == 0 then
 				PrintReviveMessage()
 			end
 			lifesfx = sfx_marioa --Takes priority over other lifesfx
@@ -707,7 +708,7 @@ local function PreThinkFrameFor(player)
 				SH_THUNDERCOIN,
 				SH_PITY | SH_FIREFLOWER
 			}
-			local i = P_RandomKey(table.maxn(shieldchoices)) + 1
+			local i = P_RandomKey(#shieldchoices) + 1
 
 			--Switch that shield! Honoring an existing SH_STACK if present
 			P_SwitchShield(player, (pci.lastshield & SH_STACK) | shieldchoices[i])
