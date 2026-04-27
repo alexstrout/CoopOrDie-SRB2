@@ -285,7 +285,7 @@ local function DestroyCDInfo(player)
 	end
 
 	--Remove us from the revive queue
-	for k, v in pairs(revivequeue) do
+	for k, v in ipairs(revivequeue) do
 		if v == player then
 			table.remove(revivequeue, k)
 			break
@@ -394,7 +394,7 @@ COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 			CONS_Printf(player, tostring(k) .. " = " .. v)
 		end
 		CONS_Printf(player, "-- revivequeue --")
-		for k, v in pairs(revivequeue) do
+		for k, v in ipairs(revivequeue) do
 			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. v.name)
 		end
 		return
@@ -564,7 +564,7 @@ local function PreThinkFrameFor(player)
 		)
 	) then
 		pci.needsrevive = false
-		for k, v in pairs(revivequeue) do
+		for k, v in ipairs(revivequeue) do
 			if v == player then
 				table.remove(revivequeue, k)
 				break
@@ -615,7 +615,7 @@ local function PreThinkFrameFor(player)
 		and player.ai.leader
 		and player.ai.leader.valid
 		and player.ai.leader.spectator then
-			for k, v in pairs(revivequeue) do
+			for k, v in ipairs(revivequeue) do
 				if v == player.ai.leader then
 					table.remove(revivequeue, k)
 					table.insert(revivequeue, 1, player.ai.leader)
