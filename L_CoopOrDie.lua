@@ -852,7 +852,7 @@ mobjthinkerfunc[PostMapLoadFor] = function(mobj)
 			--Count up enemies
 			--Only done here to avoid altering targetenemyct mid-game
 			for mobj in mobjs.iterate() do
-				if ValidEnemy(mobj) then
+				if mobj.cd_active and ValidEnemy(mobj) then
 					targetenemyct = $ + mobj.info.spawnhealth
 
 					--Debug
@@ -902,11 +902,12 @@ end
 addHook("MapLoad", HandleMapLoad)
 
 --Handle enemy spawning
-addHook("MobjSpawn", function(mobj)
+local function HandleMobjSpawn(mobj)
 	--Flag boss types as priority AI target
 	if mobj.info.flags & MF_BOSS then
 		mobj.info.cd_aipriority = true
 	end
+
 	--Flag enemy as "active" to run damage hooks etc. on
 	if ValidEnemy(mobj) then
 		mobj.cd_active = true
@@ -917,7 +918,8 @@ addHook("MobjSpawn", function(mobj)
 			mobj.color = SKINCOLOR_GREEN
 		end
 	end
-end)
+end
+addHook("MobjSpawn", HandleMobjSpawn)
 
 --Handle enemy collision (no collide on merp)
 local function HandleCollide(tmthing, thing)
@@ -1079,7 +1081,7 @@ addHook("TouchSpecial", function(special, toucher)
 end, MT_BLUESPHERE)
 
 --Handle (re)spawning for players
-addHook("PlayerSpawn", function(player)
+local function HandlePlayerSpawn(player)
 	--Players get awards w/ all emeralds since it's more difficult
 	if All7Emeralds(emeralds)
 	and CV_CDEmeraldBonus.value then
@@ -1103,7 +1105,8 @@ addHook("PlayerSpawn", function(player)
 	if leveltime == levelstarttime then
 		teamlives = max($, player.lives)
 	end
-end)
+end
+addHook("PlayerSpawn", HandlePlayerSpawn)
 
 --Handle sudden quitting for players
 addHook("PlayerQuit", function(player, reason)
@@ -1411,3 +1414,14 @@ COM_AddCommand("CDHELP", BotHelp, COM_LOCAL)
 	--------------------------------------------------------------------------------
 ]]
 BotHelp() --Display help
+
+if gamestate == GS_LEVEL then
+	HandleMapChange(-1)
+	for mobj in mobjs.iterate() do
+		HandleMobjSpawn(mobj)
+	end
+	HandleMapLoad(-1)
+	for player in players.iterate do
+		HandlePlayerSpawn(player)
+	end
+end
