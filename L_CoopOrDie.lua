@@ -835,8 +835,8 @@ local function HandleMapChange(mapnum)
 	mobjthinkers = {}
 	collectgarbage()
 
-	--Ensure teamlives is a sane value
-	teamlives = max($, 1)
+	--Reset teamlives - set by PlayerSpawn later
+	teamlives = 1
 end
 addHook("MapChange", HandleMapChange)
 
