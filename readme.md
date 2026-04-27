@@ -1,4 +1,4 @@
-Coop or Die! v1.1 ([Changelog](changelog.md))
+Coop or Die! v1.2 ([Changelog](changelog.md))
 =================
 An experiment in cooperative gameplay mechanics for a 3D platformer (in this case SRB2).
 

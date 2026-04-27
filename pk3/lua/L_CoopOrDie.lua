@@ -1,8 +1,8 @@
 --[[
-	Coop or Die! v1.1 by fox: https://taraxis.com/
+	Coop or Die! v1.2 by fox: https://taraxis.com/CoopOrDie-SRB2
 
 	--------------------------------------------------------------------------------
-	Copyright (c) 2021 Alex Strout
+	Copyright (c) 2026 Alex Strout
 
 	Permission is hereby granted, free of charge, to any person obtaining a copy of
 	this software and associated documentation files (the "Software"), to deal in
@@ -23,10 +23,7 @@
 	SOFTWARE.
 
 	--------------------------------------------------------------------------------
-	Extensively draws code from foxBot,
-	Copyright (c) 2021 Alex Strout and Shane Ellis
-
-	See license-foxBot.txt or:
+	Extensively draws code from foxBot, see license-foxBot.txt or:
 	https://github.com/alexstrout/foxBot-SRB2/blob/master/license.txt
 ]]
 
