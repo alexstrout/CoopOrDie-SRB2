@@ -187,10 +187,10 @@ local huddrawn = {}
 
 --Resolve player by number (string or int)
 local function ResolvePlayerByNum(num)
-	if type(num) != "number"
+	if type(num) != "number" then
 		num = tonumber(num)
 	end
-	if num != nil and num >= 0 and num < 32
+	if num != nil and num >= 0 and num < 32 then
 		return players[num]
 	end
 	return nil
@@ -199,7 +199,7 @@ end
 --Returns absolute angle (0 to 180)
 --Useful for comparing angles
 local function AbsAngle(ang)
-	if ang < 0 and ang > ANGLE_180
+	if ang < 0 and ang > ANGLE_180 then
 		return InvAngle(ang)
 	end
 	return ang
@@ -229,7 +229,7 @@ end
 
 --Register pin with player for lookup later
 local function RegisterPinnedPlayer(player, pin)
-	if not player.cd_pinnedplayers
+	if not player.cd_pinnedplayers then
 		player.cd_pinnedplayers = {}
 	end
 	local retVal = player.cd_pinnedplayers[#pin + 1] == nil
@@ -239,12 +239,12 @@ end
 
 --Unregister pin with player
 local function UnregisterPinnedPlayer(player, pin)
-	if not (player and player.valid and player.cd_pinnedplayers)
+	if not (player and player.valid and player.cd_pinnedplayers) then
 		return
 	end
 	local retVal = player.cd_pinnedplayers[#pin + 1] != nil
 	player.cd_pinnedplayers[#pin + 1] = nil
-	if table.maxn(player.cd_pinnedplayers) < 1
+	if table.maxn(player.cd_pinnedplayers) < 1 then
 		player.cd_pinnedplayers = nil
 	end
 	return retVal
@@ -252,8 +252,8 @@ end
 
 --Unregister all pins with player
 local function UnregisterAllPinnedPlayers(player)
-	if player.cd_pinnedplayers
-		for _, pin in pairs(player.cd_pinnedplayers)
+	if player.cd_pinnedplayers then
+		for _, pin in pairs(player.cd_pinnedplayers) do
 			UnregisterPinnedPlayer(player, pin)
 		end
 		return true
@@ -263,7 +263,7 @@ end
 
 --Create CDInfo table for a given player, if needed
 local function SetupCDInfo(player)
-	if player.cdinfo
+	if player.cdinfo then
 		return
 	end
 
@@ -279,20 +279,20 @@ end
 
 --Destroy CDInfo table (and any child tables / objects) for a given player, if needed
 local function DestroyCDInfo(player)
-	if not player.cdinfo
+	if not player.cdinfo then
 		return
 	end
 
 	--Remove us from the revive queue
-	for k, v in pairs(revivequeue)
-		if v == player
+	for k, v in pairs(revivequeue) do
+		if v == player then
 			table.remove(revivequeue, k)
 			break
 		end
 	end
 
 	--Unregister us from all players' pinned players
-	for p in players.iterate
+	for p in players.iterate do
 		UnregisterPinnedPlayer(p, player)
 	end
 
@@ -304,17 +304,17 @@ end
 --List all players, possible including pins only
 local function ListPlayers(player)
 	local count = 0
-	for p in players.iterate
+	for p in players.iterate do
 		local msg = " " .. #p .. " - " .. p.name
-		if player.cd_pinnedplayers
-			for _, pin in pairs(player.cd_pinnedplayers)
-				if pin == p
+		if player.cd_pinnedplayers then
+			for _, pin in pairs(player.cd_pinnedplayers) do
+				if pin == p then
 					msg = $ .. " \x81(pinned)"
 					break
 				end
 			end
 		end
-		if p == player
+		if p == player then
 			msg = $ .. " \x8A(you)"
 		end
 		CONS_Printf(player, msg)
@@ -328,8 +328,8 @@ COM_AddCommand("LISTPLAYERS", ListPlayers, COM_LOCAL)
 local function PinPlayer(player, pin)
 	--Make sure we're valid / won't end up pinning ourself
 	local pin = ResolvePlayerByNum(pin)
-	if not (pin and pin.valid) or pin == player
-		if pin == player
+	if not (pin and pin.valid) or pin == player then
+		if pin == player then
 			CONS_Printf(player, "You can't pin yourself! Please try a different player:")
 		else
 			CONS_Printf(player, "Invalid player! Please specify a player by number:")
@@ -339,7 +339,7 @@ local function PinPlayer(player, pin)
 	end
 
 	--Pin that player!
-	if RegisterPinnedPlayer(player, pin)
+	if RegisterPinnedPlayer(player, pin) then
 		CONS_Printf(player, "Pinning " .. pin.name)
 	else
 		CONS_Printf(player, "Already pinned " .. pin.name .. "!")
@@ -350,7 +350,7 @@ COM_AddCommand("PINPLAYER", PinPlayer, 0)
 --Unpin a particular player from the coop hud
 local function UnpinPlayer(player, pin)
 	--Make sure we have pins!
-	if not player.cd_pinnedplayers
+	if not player.cd_pinnedplayers then
 		CONS_Printf(player, "You don't have any pinned players!")
 		return
 	end
@@ -358,15 +358,15 @@ local function UnpinPlayer(player, pin)
 	--Support "all" argument
 	if pin != nil
 	and string.lower(pin) == "all"
-	and UnregisterAllPinnedPlayers(player)
+	and UnregisterAllPinnedPlayers(player) then
 		CONS_Printf(player, "Unpinning all players")
 		return
 	end
 
 	--Make sure we're valid / won't end up unpinning ourself
 	local pin = ResolvePlayerByNum(pin)
-	if not (pin and pin.valid) or pin == player
-		if pin == player
+	if not (pin and pin.valid) or pin == player then
+		if pin == player then
 			CONS_Printf(player, "You can't unpin yourself! Please try a different player:")
 		else
 			CONS_Printf(player, "Invalid player! Please specify a player by number:")
@@ -376,7 +376,7 @@ local function UnpinPlayer(player, pin)
 	end
 
 	--Unpin that player!
-	if UnregisterPinnedPlayer(player, pin)
+	if UnregisterPinnedPlayer(player, pin) then
 		CONS_Printf(player, "Unpinning " .. pin.name)
 	else
 		CONS_Printf(player, "Already unpinned " .. pin.name .. "!")
@@ -387,19 +387,19 @@ COM_AddCommand("UNPINPLAYER", UnpinPlayer, 0)
 --Debug command for printing out CDInfo objects
 COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 	bot = ResolvePlayerByNum(bot)
-	if not (bot and bot.valid and bot.cdinfo)
+	if not (bot and bot.valid and bot.cdinfo) then
 		CONS_Printf(player, "-- mobjthinkers --")
-		for k, v in pairs(mobjthinkers)
+		for k, v in pairs(mobjthinkers) do
 			CONS_Printf(player, tostring(k) .. " = " .. v)
 		end
 		CONS_Printf(player, "-- revivequeue --")
-		for k, v in pairs(revivequeue)
+		for k, v in pairs(revivequeue) do
 			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. v.name)
 		end
 		return
 	end
 	CONS_Printf(player, "-- cdinfo " .. bot.name .. " --")
-	for k, v in pairs(bot.cdinfo)
+	for k, v in pairs(bot.cdinfo) do
 		CONS_Printf(player, k .. " = " .. tostring(v))
 	end
 end, COM_LOCAL)
@@ -416,7 +416,7 @@ end, COM_LOCAL)
 --(and other cool things now, like team revive)
 local function GetNextNotifyThreshold(threshold)
 	if targetenemyct == 0
-	or enemyct >= targetenemyct
+	or enemyct >= targetenemyct then
 		return -1
 	end
 	return 25 * ((enemyct * 100 / targetenemyct / 25) + 1)
@@ -432,14 +432,14 @@ end
 
 --Set skincolor for target mobj based on source
 local function SetColorFor(mobj, source)
-	if source and source.player
-		if source.player == consoleplayer
-			if splitscreen
+	if source and source.player then
+		if source.player == consoleplayer then
+			if splitscreen then
 				mobj.color = SKINCOLOR_AZURE
 			else
 				mobj.color = SKINCOLOR_GREY
 			end
-		elseif source.player == secondarydisplayplayer
+		elseif source.player == secondarydisplayplayer then
 			mobj.color = SKINCOLOR_PINK
 		else
 			mobj.color = SKINCOLOR_YELLOW
@@ -453,9 +453,9 @@ end
 local MobjThinkForEnemy = 1
 mobjthinkerfunc[MobjThinkForEnemy] = function(mobj)
 	--Decrement frettime
-	if mobj.cd_frettime
+	if mobj.cd_frettime then
 		mobj.cd_frettime = $ - 1
-		if mobj.cd_frettime <= 0
+		if mobj.cd_frettime <= 0 then
 			mobjthinkers[mobj] = nil
 			mobj.cd_frettime = nil
 			mobj.flags2 = $ & ~MF2_FRET
@@ -467,10 +467,10 @@ end
 local MobjThinkForSphere = 2
 mobjthinkerfunc[MobjThinkForSphere] = function(mobj)
 	--Decrement frettime
-	if mobj.cd_frettime
+	if mobj.cd_frettime then
 		mobj.cd_frettime = $ - 1
 		mobj.colorized = not $ --Flash on/off
-		if mobj.cd_frettime <= 0
+		if mobj.cd_frettime <= 0 then
 			mobjthinkers[mobj] = nil
 			mobj.cd_frettime = nil
 
@@ -486,7 +486,7 @@ local function PrintDownMessage(player)
 	print(player.name .. " is out!")
 end
 local function PrintReviveMessage(player)
-	if player --Assumed valid
+	if player then --Assumed valid
 		print(player.name .. " has revived!")
 	else
 		print("The party has revived via a 1up monitor!")
@@ -499,12 +499,12 @@ end
 
 --Think for players!
 local function PreThinkFrameFor(player)
-	if not player.valid
+	if not player.valid then
 		return
 	end
 
 	--Make sure we have a proper CoopOrDie info
-	if not player.cdinfo
+	if not player.cdinfo then
 		SetupCDInfo(player)
 	end
 	local pci = player.cdinfo
@@ -513,17 +513,17 @@ local function PreThinkFrameFor(player)
 	--This fixes some timing issues w/ foxBot if loaded first
 	if pci.useteamlives
 	and player.lives > 0
-	and pci.lastlives > 0
-		if player.lives != pci.lastlives
+	and pci.lastlives > 0 then
+		if player.lives != pci.lastlives then
 			teamlives = player.lives
-		elseif leveltime > levelstarttime
+		elseif leveltime > levelstarttime then
 			if teamlives > player.lives
 			and not lifesfx --Revive sound takes priority
 			and (
 				--Play sound only for local players
 				player == consoleplayer
 				or player == secondarydisplayplayer
-			)
+			) then
 				lifesfx = sfx_3db09
 			end
 			player.lives = teamlives
@@ -531,12 +531,12 @@ local function PreThinkFrameFor(player)
 	--KO'd? Register for revive if not already
 	elseif player.lives <= 0
 	and pci.lastlives <= 0
-	and not pci.needsrevive
+	and not pci.needsrevive then
 		pci.needsrevive = true
 		table.insert(revivequeue, player)
 
 		--Do teamlives mechanics if enabled; otherwise, just reset to 1
-		if CV_CDTeamLives.value
+		if CV_CDTeamLives.value then
 			PrintDownMessage(player)
 		else
 			teamlives = 1
@@ -561,22 +561,22 @@ local function PreThinkFrameFor(player)
 			player.mo and player.mo.valid
 			and player.mo.health > 0
 		)
-	)
+	) then
 		pci.needsrevive = false
-		for k, v in pairs(revivequeue)
-			if v == player
+		for k, v in pairs(revivequeue) do
+			if v == player then
 				table.remove(revivequeue, k)
 				break
 			end
 		end
 		--Do teamlives mechanics if enabled; otherwise, just reset to 1
-		if CV_CDTeamLives.value
+		if CV_CDTeamLives.value then
 			--Decrement teamlives if not a 1up
-			if player.lives <= pci.lastlives
+			if player.lives <= pci.lastlives then
 				teamlives = max($ - 1, 1)
 				PrintReviveMessage(player)
 			--Otherwise print a party revive message once
-			elseif table.maxn(revivequeue) == 0
+			elseif table.maxn(revivequeue) == 0 then
 				PrintReviveMessage()
 			end
 			lifesfx = sfx_marioa --Takes priority over other lifesfx
@@ -591,9 +591,9 @@ local function PreThinkFrameFor(player)
 
 	--Handle exiting here
 	if (player.pflags & PF_FINISHED)
-	and enemyct < targetenemyct
+	and enemyct < targetenemyct then
 		--Short-circuit failsafe for custom exit triggers
-		if pci.reexittimeout > 0
+		if pci.reexittimeout > 0 then
 			pci.reexittimeout = 0
 			pendingenemyct = targetenemyct - enemyct
 			pendingenemycttime = 1 --Process this tic
@@ -613,9 +613,9 @@ local function PreThinkFrameFor(player)
 		if player.ai
 		and player.ai.leader
 		and player.ai.leader.valid
-		and player.ai.leader.spectator
-			for k, v in pairs(revivequeue)
-				if v == player.ai.leader
+		and player.ai.leader.spectator then
+			for k, v in pairs(revivequeue) do
+				if v == player.ai.leader then
 					table.remove(revivequeue, k)
 					table.insert(revivequeue, 1, player.ai.leader)
 					break
@@ -640,13 +640,13 @@ local function PreThinkFrameFor(player)
 	--Note this is cleared on map reset so we don't cheat the time bonus
 	elseif pci.finished
 	and targetenemyct > 0
-	and enemyct >= targetenemyct
+	and enemyct >= targetenemyct then
 		P_DoPlayerFinish(player)
 		pci.finished = false
-	elseif pci.reexittimeout > 0
+	elseif pci.reexittimeout > 0 then
 		pci.reexittimeout = $ - 1
 	end
-	if pci.reborn
+	if pci.reborn then
 		pci.reborn = false
 
 		--Rings don't carry over - instead, we get reborn w/ bonus rings
@@ -658,16 +658,16 @@ local function PreThinkFrameFor(player)
 		--This does not stack with ring-sync bots since that would be ridiculous
 		if All7Emeralds(emeralds)
 		and not (player.ai and player.ai.syncrings)
-		and CV_CDEmeraldBonus.value
+		and CV_CDEmeraldBonus.value then
 			player.rings = $ + 20
 		end
 
 		--Carry over shield, if applicable - otherwise queue shield award
 		if (pci.lastshield & SH_NOSTACK)
-		and pci.lastshield != SH_PINK
+		and pci.lastshield != SH_PINK then
 			P_SwitchShield(player, pci.lastshield)
 			pci.lastshield = SH_NONE
-		elseif leveltime == levelstarttime --Randomize a bit on level start
+		elseif leveltime == levelstarttime then --Randomize a bit on level start
 			pci.awardshieldtime = P_RandomByte() * TICRATE / 170
 		else
 			pci.awardshieldtime = TICRATE
@@ -675,28 +675,28 @@ local function PreThinkFrameFor(player)
 
 		--Woosh!
 		if player.realmo and player.realmo.valid
-		and (leveltime > levelstarttime or player == consoleplayer)
+		and (leveltime > levelstarttime or player == consoleplayer) then
 			S_StartSound(player.realmo, sfx_mixup)
 		end
 		P_FlashPal(player, PAL_MIXUP, TICRATE / 4)
 	end
 
 	--Revive someone if we've hit a new starpost?
-	if player.starpostnum > pci.laststarpostnum
+	if player.starpostnum > pci.laststarpostnum then
 		teamlives = max($, 2)
 
 		--Set for all players to avoid coopstarposts issues
-		for p in players.iterate
-			if p.cdinfo
+		for p in players.iterate do
+			if p.cdinfo then
 				p.cdinfo.laststarpostnum = p.starpostnum
 			end
 		end
 	end
 
 	--Award shields if queued
-	if pci.awardshieldtime > 0
+	if pci.awardshieldtime > 0 then
 		pci.awardshieldtime = $ - 1
-		if pci.awardshieldtime <= 0
+		if pci.awardshieldtime <= 0 then
 			--Pick from array of random shields
 			local shieldchoices = {
 				SH_ARMAGEDDON,
@@ -714,8 +714,8 @@ local function PreThinkFrameFor(player)
 			pci.lastshield = SH_NONE
 
 			--Sounds and fireflower color
-			if player.realmo and player.realmo.valid
-				if player.powers[pw_shield] & SH_FIREFLOWER
+			if player.realmo and player.realmo.valid then
+				if player.powers[pw_shield] & SH_FIREFLOWER then
 					player.realmo.color = SKINCOLOR_WHITE
 				end
 				S_StartSound(player.realmo, sfx_shield)
@@ -734,11 +734,11 @@ end
 ]]
 --Tic? Tock! Call thinker functions for players and any registered mobjthinkers
 addHook("PreThinkFrame", function()
-	for player in players.iterate
+	for player in players.iterate do
 		PreThinkFrameFor(player)
 	end
-	for k_mobj, v_func in pairs(mobjthinkers)
-		if k_mobj.valid
+	for k_mobj, v_func in pairs(mobjthinkers) do
+		if k_mobj.valid then
 			mobjthinkerfunc[v_func](k_mobj)
 		else
 			mobjthinkers[k_mobj] = nil
@@ -746,20 +746,20 @@ addHook("PreThinkFrame", function()
 	end
 
 	--Handle any pendingenemyct
-	if pendingenemycttime > 0
+	if pendingenemycttime > 0 then
 		pendingenemycttime = $ - 1
 		if pendingenemycttime <= 0
-		or pendingenemyct + enemyct >= targetenemyct
+		or pendingenemyct + enemyct >= targetenemyct then
 			enemyct = $ + pendingenemyct
 			pendingenemyct = 0
 
 			--Make noises! And revive players
 			if notifythreshold > 0 and targetenemyct > 0
-			and enemyct * 100 / targetenemyct >= notifythreshold
+			and enemyct * 100 / targetenemyct >= notifythreshold then
 				notifythreshold = GetNextNotifyThreshold($)
 				teamlives = max($, 2)
-				if consoleplayer and consoleplayer.valid
-					if enemyct >= targetenemyct
+				if consoleplayer and consoleplayer.valid then
+					if enemyct >= targetenemyct then
 						S_StartSound(nil, sfx_ideya, consoleplayer)
 					else
 						S_StartSound(nil, sfx_3db06, consoleplayer)
@@ -770,8 +770,8 @@ addHook("PreThinkFrame", function()
 	end
 
 	--Play any lifesfx set for this frame
-	if lifesfx and lifesfx == lastlifesfx
-		if consoleplayer and consoleplayer.valid
+	if lifesfx and lifesfx == lastlifesfx then
+		if consoleplayer and consoleplayer.valid then
 			S_StartSound(nil, lifesfx, consoleplayer)
 		end
 		lifesfx = nil
@@ -783,12 +783,12 @@ addHook("PreThinkFrame", function()
 	--Thus, newclient never gets unset on the server itself, but that's ok
 	if newclient
 	and consoleplayer
-	and consoleplayer != server
+	and consoleplayer != server then
 		newclient = false
 
 		--Fix grey enemies for mid-game joiners
-		for mobj in mobjs.iterate()
-			if mobj.cd_lastattacker
+		for mobj in mobjs.iterate() do
+			if mobj.cd_lastattacker then
 				SetColorFor(mobj, mobj.cd_lastattacker)
 			end
 		end
@@ -800,15 +800,15 @@ end)
 
 --Handle MapChange for resetting things
 local function HandleMapChange(mapnum)
-	for player in players.iterate
-		if player.cdinfo
+	for player in players.iterate do
+		if player.cdinfo then
 			ResetCDInfo(player)
 
 			--Reset a few more things if different map
-			if mapnum != lastmapnum
+			if mapnum != lastmapnum then
 				player.cdinfo.reborn = false
 			--Hand out shields if restarting map from death
-			elseif teamlives <= 1
+			elseif teamlives <= 1 then
 				player.cdinfo.reborn = true
 			end
 		end
@@ -819,9 +819,9 @@ local function HandleMapChange(mapnum)
 	lastleveltime = 0
 
 	--Reset enemy count, unless we're restarting the map
-	if mapnum != lastmapnum
+	if mapnum != lastmapnum then
 		enemyct = 0
-	elseif multiplayer
+	elseif multiplayer then
 		enemyct = $ / 2 --Unchanged for singleplayer
 	end
 	targetenemyct = 0
@@ -842,26 +842,26 @@ addHook("MapChange", HandleMapChange)
 --Handle MapLoad for post-load actions
 local PostMapLoadFor = 3
 mobjthinkerfunc[PostMapLoadFor] = function(mobj)
-	if mobj.cd_counttime
+	if mobj.cd_counttime then
 		mobj.cd_counttime = $ - 1
-		if mobj.cd_counttime <= 0
+		if mobj.cd_counttime <= 0 then
 			mobjthinkers[mobj] = nil
 			mobj.cd_counttime = nil
 
 			--Count up enemies
 			--Only done here to avoid altering targetenemyct mid-game
-			for mobj in mobjs.iterate()
-				if ValidEnemy(mobj)
+			for mobj in mobjs.iterate() do
+				if ValidEnemy(mobj) then
 					targetenemyct = $ + mobj.info.spawnhealth
 
 					--Debug
-					if CV_CDDebug.value and not netgame
+					if CV_CDDebug.value and not netgame then
 						mobj.colorized = true
 						mobj.color = SKINCOLOR_ORANGE
 					end
 				end
 			end
-			if CV_CDDebug.value
+			if CV_CDDebug.value then
 				print("-- CDDebug: Counted " .. targetenemyct .. " enemies * spawnhealth")
 			end
 			targetenemyct = min(
@@ -869,7 +869,7 @@ mobjthinkerfunc[PostMapLoadFor] = function(mobj)
 				FixedCeil($ * FRACUNIT * CV_CDEnemyClearPct.value / 100) / FRACUNIT,
 				CV_CDEnemyClearMax.value
 			)
-			if CV_CDDebug.value
+			if CV_CDDebug.value then
 				print("-- CDDebug: Adjusting count to " .. targetenemyct)
 			end
 			notifythreshold = GetNextNotifyThreshold($)
@@ -877,14 +877,14 @@ mobjthinkerfunc[PostMapLoadFor] = function(mobj)
 	end
 end
 local function HandleMapLoad(mapnum)
-	if G_IsSpecialStage()
+	if G_IsSpecialStage() then
 		--Tighten special stage time!
-		if CV_CDDMFlags.value & 4
+		if CV_CDDMFlags.value & 4 then
 			local count = 0
-			for player in players.iterate
+			for player in players.iterate do
 				count = $ + 1
 			end
-			for player in players.iterate
+			for player in players.iterate do
 				player.nightstime = max($ * 3 / max(count, 3), 60 * TICRATE)
 			end
 		end
@@ -893,7 +893,7 @@ local function HandleMapLoad(mapnum)
 
 	--Handle any post-MapLoad logic - just use mobjthinkers for this
 	--Server may be nil when exiting to title, but should otherwise always be valid
-	if server and server.valid
+	if server and server.valid then
 		mobjthinkers[server] = PostMapLoadFor
 		server.cd_counttime = TICRATE
 	end
@@ -903,15 +903,15 @@ addHook("MapLoad", HandleMapLoad)
 --Handle enemy spawning
 addHook("MobjSpawn", function(mobj)
 	--Flag boss types as priority AI target
-	if mobj.info.flags & MF_BOSS
+	if mobj.info.flags & MF_BOSS then
 		mobj.info.cd_aipriority = true
 	end
 	--Flag enemy as "active" to run damage hooks etc. on
-	if ValidEnemy(mobj)
+	if ValidEnemy(mobj) then
 		mobj.cd_active = true
 
 		--Debug
-		if CV_CDDebug.value and not netgame
+		if CV_CDDebug.value and not netgame then
 			mobj.colorized = true
 			mobj.color = SKINCOLOR_GREEN
 		end
@@ -925,7 +925,7 @@ local function HandleCollide(tmthing, thing)
 	and (
 		thing.cd_lastattacker.mo == tmthing
 		or (tmthing.player and thing.cd_lastattacker.player == tmthing.player)
-	)
+	) then
 		return false
 	end
 end
@@ -941,8 +941,8 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 		--Nukes and other big explosions also instantly deal real damage
 		damagetype == DMG_NUKE
 		or (damagetype & (DMG_CANHURTSELF | DMG_DEATHMASK))
-	)
-		if not target.cd_lastattacker
+	) then
+		if not target.cd_lastattacker then
 			target.cd_lastattacker = {
 				mo = source,
 				player = source.player
@@ -965,29 +965,29 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 			S_StartSound(target, sfx_dmpain)
 			return true
 		elseif target.cd_lastattacker.mo == source
-		or (source.player and target.cd_lastattacker.player == source.player)
+		or (source.player and target.cd_lastattacker.player == source.player) then
 			--Merp
 			if inflictor
-			and not target.cd_frettime
+			and not target.cd_frettime then
 				mobjthinkers[target] = MobjThinkForEnemy
 				target.cd_frettime = TICRATE / 2
 				S_StartSound(target, sfx_s3k7b)
 
 				--Count number of merps, eventually retaliating
-				if not target.cd_merpcount
+				if not target.cd_merpcount then
 					target.cd_merpcount = 3
 				else
 					target.cd_merpcount = $ - 1
-					if target.cd_merpcount < 2
+					if target.cd_merpcount < 2 then
 						--cd_frettime already set above
 						target.flags2 = $ | MF2_FRET
 					end
-					if target.cd_merpcount <= 0
+					if target.cd_merpcount <= 0 then
 						--Player or player-like buddy object :)
-						if inflictor.player
+						if inflictor.player then
 							S_StartSound(inflictor, sfx_shldls)
 							P_DoPlayerPain(inflictor.player, target, target)
-						elseif inflictor.info.spawnstate == mobjinfo[MT_PLAYER].spawnstate
+						elseif inflictor.info.spawnstate == mobjinfo[MT_PLAYER].spawnstate then
 							S_StartSound(inflictor, sfx_shldls)
 							inflictor.state = S_PLAY_PAIN
 						end
@@ -1013,7 +1013,7 @@ local function HandleDeath(target, inflictor, source, damagetype)
 	--Also check leveltime in case any enemies are removed at level start
 	--(+ 1 tic incase we're spamming retry for some reason)
 	if leveltime > levelstarttime + 1
-	and target.valid and target.cd_active
+	and target.valid and target.cd_active then
 		target.cd_active = false
 		target.cd_lastattacker = nil
 		mobjthinkers[target] = nil
@@ -1032,13 +1032,13 @@ addHook("MobjRemoved", HandleDeath)
 
 --Handle player death
 addHook("MobjDeath", function(target, inflictor, source, damagetype)
-	if CV_CDDMFlags.value & 8
-		for mobj in mobjs.iterate()
+	if CV_CDDMFlags.value & 8 then
+		for mobj in mobjs.iterate() do
 			if mobj.cd_lastattacker
 			and (
 				mobj.cd_lastattacker.mo == target
 				or (target.player and mobj.cd_lastattacker.player == target.player)
-			)
+			) then
 				mobj.cd_lastattacker = nil
 
 				--Decolorize
@@ -1052,10 +1052,10 @@ end, MT_PLAYER)
 --Handle special stage spheres
 addHook("TouchSpecial", function(special, toucher)
 	if not (CV_CDDMFlags.value & 2)
-	or not multiplayer --No teammates in singleplayer special stages
+	or not multiplayer then --No teammates in singleplayer special stages
 		return nil
 	end
-	if not special.cd_lastattacker
+	if not special.cd_lastattacker then
 		special.cd_lastattacker = {
 			mo = toucher,
 			player = toucher.player
@@ -1072,7 +1072,7 @@ addHook("TouchSpecial", function(special, toucher)
 		return true
 	elseif special.cd_lastattacker.mo == toucher
 	or (toucher.player and special.cd_lastattacker.player == toucher.player)
-	or special.cd_frettime --Simulate MF2_FRET behavior
+	or special.cd_frettime then --Simulate MF2_FRET behavior
 		return true
 	end
 end, MT_BLUESPHERE)
@@ -1081,32 +1081,32 @@ end, MT_BLUESPHERE)
 addHook("PlayerSpawn", function(player)
 	--Players get awards w/ all emeralds since it's more difficult
 	if All7Emeralds(emeralds)
-	and CV_CDEmeraldBonus.value
+	and CV_CDEmeraldBonus.value then
 		SetupCDInfo(player) --For first-time joiners; safe if existing
 		player.cdinfo.reborn = true --No effect on eol teleport
 	end
 
 	--Handle NoReload resets
-	if leveltime < lastleveltime
+	if leveltime < lastleveltime then
 		HandleMapChange(lastmapnum)
 		HandleMapLoad(lastmapnum)
 	end
 
 	--Record level start time (for NoReload levels)
 	--This could be in MapLoad, but dedicated servers start w/ no players
-	if levelstarttime == 0
+	if levelstarttime == 0 then
 		levelstarttime = leveltime
 	end
 
 	--Match teamlives to (highest) expected player lives at level start
-	if leveltime == levelstarttime
+	if leveltime == levelstarttime then
 		teamlives = max($, player.lives)
 	end
 end)
 
 --Handle sudden quitting for players
 addHook("PlayerQuit", function(player, reason)
-	if player.cdinfo
+	if player.cdinfo then
 		DestroyCDInfo(player)
 	end
 end)
@@ -1115,26 +1115,26 @@ end)
 local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	--Ring / time hud!
 	local rcolor = "\x82"
-	if player.nightstime
+	if player.nightstime then
 		if player.mo and player.mo.valid
 		and (player.mo.eflags & (MFE_TOUCHWATER | MFE_UNDERWATER))
-		and leveltime % (TICRATE / 4) < TICRATE / 8
+		and leveltime % (TICRATE / 4) < TICRATE / 8 then
 			rcolor = "\x85"
 		end
 		hudtext[i] = rcolor .. "Time \x80" .. player.nightstime / TICRATE
 	else
 		if player.rings <= 0
-		and leveltime % TICRATE < TICRATE / 2
+		and leveltime % TICRATE < TICRATE / 2 then
 			rcolor = "\x85"
 		end
 		hudtext[i] = rcolor .. "Rings \x80" .. player.rings
 	end
-	if string.len(player.name) > 11
+	if string.len(player.name) > 11 then
 		hudtext[i + 1] = string.sub(player.name, 0, 10) .. ".."
 	else
 		hudtext[i + 1] = player.name
 	end
-	if namecolor
+	if namecolor then
 		hudtext[i + 1] = namecolor .. $
 	end
 
@@ -1142,7 +1142,7 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	local pmo = player.realmo
 	if player.spectator
 	or not (pmo and pmo.valid)
-	or pmo.health <= 0
+	or pmo.health <= 0 then
 		hudtext[i] = "\x86" .. "Dead.."
 	end
 	hudtext[i + 2] = ""
@@ -1150,7 +1150,7 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 
 	local bmo = stplyr.realmo
 	if bmo and bmo.valid
-	and pmo and pmo.valid
+	and pmo and pmo.valid then
 		--Distance (pre-scaled for approximate drawing purposes - can get very large)
 		local zdist = (pmo.z - bmo.z) / bmo.scale
 		local dist = FixedHypot(
@@ -1162,7 +1162,7 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 		)
 		hudtext[i + 2] = "\x86" .. "Dist "
 		if dist > INT16_MAX
-		or dist < 0
+		or dist < 0 then
 			hudtext[i + 2] = $ .. "Far.."
 		else
 			hudtext[i + 2] = $ .. dist / 100
@@ -1176,12 +1176,12 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 			)
 
 		local dir = nil
-		if dist <= 256
+		if dist <= 256 then
 			dir = " "
-		elseif AbsAngle(angle) > ANGLE_135
+		elseif AbsAngle(angle) > ANGLE_135 then
 			dir = "v"
-		elseif AbsAngle(angle) > ANGLE_45
-			if angle < 0
+		elseif AbsAngle(angle) > ANGLE_45 then
+			if angle < 0 then
 				dir = "<"
 			else
 				dir = ">"
@@ -1189,11 +1189,11 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 		else
 			dir = "^"
 		end
-		if abs(zdist) > 256
-			if dist - abs(zdist) < dist / 8
+		if abs(zdist) > 256 then
+			if dist - abs(zdist) < dist / 8 then
 				dir = " "
 			end
-			if zdist < 0
+			if zdist < 0 then
 				dir = "-" .. $
 			else
 				dir = "+" .. $
@@ -1204,14 +1204,14 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 
 	--Keep simple foxBot concepts in case player prefers only this hud
 	if stplyr.ai
-	and player == stplyr.ai.leader
-		if stplyr.ai.playernosight
+	and player == stplyr.ai.leader then
+		if stplyr.ai.playernosight then
 			hudtext[i + 2] = "\x87" .. string.sub($, 2)
 		end
 		if stplyr.ai.cmd_time > 0
-		and stplyr.ai.cmd_time < 3 * TICRATE
+		and stplyr.ai.cmd_time < 3 * TICRATE then
 			hudtext[i + 3] = "\x81" + "AI control in " .. stplyr.ai.cmd_time / TICRATE + 1 .. "..."
-		elseif stplyr.ai.doteleport
+		elseif stplyr.ai.doteleport then
 			hudtext[i + 3] = "\x84Teleporting..."
 		end
 	end
@@ -1219,28 +1219,28 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 end
 hud.add(function(v, stplyr, cam)
 	--If not previous text in buffer... (e.g. debug)
-	if hudtext[1] == nil
+	if hudtext[1] == nil then
 		--And we don't want a hud...
-		if CV_CDShowHud.value == 0
+		if CV_CDShowHud.value == 0 then
 			return
 		end
 
 		--Otherwise generate a simple coop hud
 		local i = 100
-		if targetenemyct > 0
+		if targetenemyct > 0 then
 			i = enemyct * 100 / targetenemyct
 			hudtext[1] = i .. "%"
 			hudtext[2] = "Enemy Goal:"
-			if pendingenemyct
+			if pendingenemyct then
 				hudtext[1] = $ .. " \x83+" .. pendingenemyct .. "x"
 			end
-			if i < 25
+			if i < 25 then
 				hudtext[1] = "\x85" .. $
-			elseif i < 50
+			elseif i < 50 then
 				hudtext[1] = "\x84" .. $
-			elseif i < 75
+			elseif i < 75 then
 				hudtext[1] = "\x81" .. $
-			elseif i < 100
+			elseif i < 100 then
 				hudtext[1] = "\x8A" .. $
 			else
 				hudtext[1] = "\x83" .. "DONE!"
@@ -1254,24 +1254,24 @@ hud.add(function(v, stplyr, cam)
 		i = 3
 		if stplyr.ai
 		and stplyr.ai.leader
-		and stplyr.ai.leader.valid
+		and stplyr.ai.leader.valid then
 			i = BuildHudFor(v, stplyr, cam, stplyr.ai.leader, i, "\x83")
 			huddrawn[#stplyr.ai.leader] = true
 
 			--And realleader right below if different (e.g. dead)
 			if stplyr.ai.realleader != stplyr.ai.leader
 			and stplyr.ai.realleader
-			and stplyr.ai.realleader.valid
+			and stplyr.ai.realleader.valid then
 				i = BuildHudFor(v, stplyr, cam, stplyr.ai.realleader, i, "\x87")
 				huddrawn[#stplyr.ai.realleader] = true
 			end
 		end
 
 		--Put any pinned players after
-		if stplyr.cd_pinnedplayers
-			for _, pin in pairs(stplyr.cd_pinnedplayers)
+		if stplyr.cd_pinnedplayers then
+			for _, pin in pairs(stplyr.cd_pinnedplayers) do
 				if pin.valid
-				and not huddrawn[#pin]
+				and not huddrawn[#pin] then
 					i = BuildHudFor(v, stplyr, cam, pin, i, "\x81")
 					huddrawn[#pin] = true
 				end
@@ -1280,16 +1280,16 @@ hud.add(function(v, stplyr, cam)
 
 		--Draw rest of players
 		local hudmax = CV_CDHudMaxPlayers.value
-		for player in players.iterate
+		for player in players.iterate do
 			--Stop after cd_hudmaxplayers
-			if i > hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
+			if i > hudmax * 4 + 2 then --4 hudtext each + 2 for enemyct
 				break
 			end
 
 			if player != stplyr
 			and not huddrawn[#player]
 			and player.mo and player.mo.valid --Infers not spectator.. for now
-			and player.mo.health > 0
+			and player.mo.health > 0 then
 				i = BuildHudFor(v, stplyr, cam, player, i)
 			end
 			huddrawn[#player] = false
@@ -1304,21 +1304,21 @@ hud.add(function(v, stplyr, cam)
 	local scale = 1
 
 	--Special stage?
-	if G_IsSpecialStage()
+	if G_IsSpecialStage() then
 		y = $ + 32
 	end
 
 	--Account for splitscreen
 	--Avoiding V_PERPLAYER as text gets a bit too squashed
-	if splitscreen
+	if splitscreen then
 		y = $ / 2
-		if #stplyr > 0
+		if #stplyr > 0 then
 			y = $ + 108 --Magic!
 		end
 	end
 
 	--Small fonts become illegible at low res
-	if v.height() < 400
+	if v.height() < 400 then
 		size = nil
 		size_r = "right"
 		scale = 2
@@ -1326,9 +1326,9 @@ hud.add(function(v, stplyr, cam)
 
 	--Draw! Flushing hudtext after
 	--This is messy and made more sense in foxBot, but oh well
-	for k, s in ipairs(hudtext)
-		if k & 1
-			if k == 1 --Enemy goal % (e.g. "26% +1x")
+	for k, s in ipairs(hudtext) do
+		if k & 1 then
+			if k == 1 then --Enemy goal % (e.g. "26% +1x")
 				v.drawString(320 - x - 30 * scale, y, s,
 					V_SNAPTOTOP | V_SNAPTORIGHT | V_ALLOWLOWERCASE | v.localTransFlag(), size)
 			else
@@ -1337,7 +1337,7 @@ hud.add(function(v, stplyr, cam)
 			end
 		else
 			if k > 2 and (k + 2) % 4 == 0 --Direction indicator
-			and string.len(s) < 4 --Displaying a direction
+			and string.len(s) < 4 then --Displaying a direction
 				v.drawString(320 - x - 34 * scale, y, s,
 					V_SNAPTOTOP | V_SNAPTORIGHT | V_MONOSPACE | V_ALLOWLOWERCASE | v.localTransFlag(), size_r)
 			else
@@ -1347,11 +1347,11 @@ hud.add(function(v, stplyr, cam)
 			y = $ + 4 * scale
 
 			--Insert a small line break between players
-			if (k + 2) % 4 == 0
+			if (k + 2) % 4 == 0 then
 				y = $ + 2 * scale
 
 				--Wrap to another column if needed
-				if (k + 2) % (68 / scale) == 0 --17 players * 4 hudtext each
+				if (k + 2) % (68 / scale) == 0 then --17 players * 4 hudtext each
 					x = $ + 64 * scale
 					y = $ - 160 * scale --Honor splitscreen etc.
 				end
@@ -1392,7 +1392,7 @@ local function BotHelp(player)
 		"\x80  unpinplayer <player> - Unpin <player> from HUD \x86(\"all\" = all players)",
 		"\x80  listplayers - List active players"
 	)
-	if not player
+	if not player then
 		print(
 			"",
 			"\x87 Use \"cdhelp\" to show this again!"
