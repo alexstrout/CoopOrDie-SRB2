@@ -180,8 +180,13 @@ mobjinfo[MT_HIVEELEMENTAL].cd_aipriority = true
 --Text table used for HUD hook
 local hudtext = {}
 
---Player already drawn to coop HUD this frame? (set by HUD hook)
-local huddrawn = {}
+--Various HUD hook helpers
+local huddrawntime = {}
+local hudpbdfoundtime = {}
+local huddist = {}
+
+--Players by distance (refreshed on interval by HUD hook)
+local hudplayersbydist = {}
 
 --Resolve player by number (string or int)
 local function ResolvePlayerByNum(num)
@@ -230,22 +235,23 @@ local function RegisterPinnedPlayer(player, pin)
 	if not player.cd_pinnedplayers then
 		player.cd_pinnedplayers = {}
 	end
-	local retVal = player.cd_pinnedplayers[#pin + 1] == nil
-	player.cd_pinnedplayers[#pin + 1] = pin
-	return retVal
+	if player.cd_pinnedplayers[pin] then
+		return false
+	end
+	player.cd_pinnedplayers[pin] = pin
+	return true
 end
 
 --Unregister pin with player
 local function UnregisterPinnedPlayer(player, pin)
-	if not (player and player.valid and player.cd_pinnedplayers) then
-		return
+	if not (player.cd_pinnedplayers and player.cd_pinnedplayers[pin]) then
+		return false
 	end
-	local retVal = player.cd_pinnedplayers[#pin + 1] != nil
-	player.cd_pinnedplayers[#pin + 1] = nil
+	player.cd_pinnedplayers[pin] = nil
 	if #player.cd_pinnedplayers < 1 then
 		player.cd_pinnedplayers = nil
 	end
-	return retVal
+	return true
 end
 
 --Unregister all pins with player
@@ -393,6 +399,11 @@ COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 		CONS_Printf(player, "-- revivequeue --")
 		for k, v in ipairs(revivequeue) do
 			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. v.name)
+		end
+		CONS_Printf(player, "-- playersbydist --")
+		for k, v in ipairs(hudplayersbydist) do
+			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. huddist[v]
+				.. " " .. tostring(v.valid and v.name))
 		end
 		return
 	end
@@ -615,7 +626,7 @@ local function PreThinkFrameFor(player)
 			for k, v in ipairs(revivequeue) do
 				if v == player.ai.leader then
 					table.remove(revivequeue, k)
-					table.insert(revivequeue, 1, player.ai.leader)
+					table.insert(revivequeue, 1, v)
 					break
 				end
 			end
@@ -1114,6 +1125,12 @@ end)
 
 --HUD hook!
 local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
+	--Already drawn this tic?
+	if huddrawntime[player] == leveltime then
+		return i
+	end
+	huddrawntime[player] = leveltime
+
 	--Ring / time hud!
 	local rcolor = "\x82"
 	if player.nightstime then
@@ -1255,48 +1272,83 @@ hud.add(function(v, stplyr, cam)
 			hudtext[2] = ""
 		end
 
+		--Sort players by dist every so often
+		if leveltime % (3 * TICRATE) == 0 then
+			--Look for players already in our sorted array
+			for _, player in ipairs(hudplayersbydist) do
+				hudpbdfoundtime[player] = leveltime
+			end
+
+			--Grab dists for everyone
+			for player in players.iterate do
+				--Add if not found in sorted array
+				if hudpbdfoundtime[player] != leveltime then
+					table.insert(hudplayersbydist, player)
+				end
+
+				--Work out dist
+				local bmo = stplyr.realmo
+				local pmo = player.realmo
+				if bmo and bmo.valid
+				and pmo and pmo.valid
+				and pmo.health > 0 then
+					huddist[player] = FixedHypot(
+						R_PointToDist2(
+							bmo.x, bmo.y,
+							pmo.x, pmo.y
+						) / bmo.scale,
+						(pmo.z - bmo.z) / bmo.scale
+					)
+				else
+					huddist[player] = INT32_MAX
+				end
+			end
+
+			--And sort!
+			table.sort(hudplayersbydist, function(p1, p2)
+				return huddist[p1] < huddist[p2]
+			end)
+		end
+
 		--Put AI leader up top if using foxBot
 		i = 3
 		if stplyr.ai
 		and stplyr.ai.leader
 		and stplyr.ai.leader.valid then
 			i = BuildHudFor(v, stplyr, cam, stplyr.ai.leader, i, "\x83")
-			huddrawn[#stplyr.ai.leader] = true
 
 			--And realleader right below if different (e.g. dead)
 			if stplyr.ai.realleader != stplyr.ai.leader
 			and stplyr.ai.realleader
 			and stplyr.ai.realleader.valid then
 				i = BuildHudFor(v, stplyr, cam, stplyr.ai.realleader, i, "\x87")
-				huddrawn[#stplyr.ai.realleader] = true
 			end
 		end
 
 		--Put any pinned players after
 		if stplyr.cd_pinnedplayers then
-			for _, pin in pairs(stplyr.cd_pinnedplayers) do
-				if pin.valid
-				and not huddrawn[#pin] then
-					i = BuildHudFor(v, stplyr, cam, pin, i, "\x81")
-					huddrawn[#pin] = true
+			for _, player in ipairs(hudplayersbydist) do
+				if player and player.valid
+				and stplyr.cd_pinnedplayers[player] then
+					i = BuildHudFor(v, stplyr, cam, player, i, "\x81")
 				end
 			end
 		end
 
 		--Draw rest of players
 		local hudmax = CV_CDHudMaxPlayers.value
-		for player in players.iterate do
-			--Account for cd_hudmaxplayers
-			if i <= hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
-			and player != stplyr
-			and not huddrawn[#player]
-			and player.mo and player.mo.valid --Infers not spectator.. for now
-			and player.mo.health > 0 then
-				i = BuildHudFor(v, stplyr, cam, player, i)
+		for k, player in ipairs(hudplayersbydist) do
+			if player and player.valid then
+				--Account for cd_hudmaxplayers
+				if i <= hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
+				and player != stplyr
+				and not player.spectator then
+					i = BuildHudFor(v, stplyr, cam, player, i)
+				end
+			else
+				--Clean up table for next pass
+				table.remove(hudplayersbydist, k)
 			end
-
-			--But still clear huddrawn either way
-			huddrawn[#player] = false
 		end
 	end
 
