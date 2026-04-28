@@ -79,7 +79,7 @@ local CV_CDShowHud = CV_RegisterVar({
 })
 local CV_CDHudMaxPlayers = CV_RegisterVar({
 	name = "cd_hudmaxplayers",
-	defaultvalue = "12",
+	defaultvalue = "8",
 	flags = 0,
 	PossibleValue = {MIN = 0, MAX = 32}
 })
@@ -1204,18 +1204,22 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	end
 
 	--Keep simple foxBot concepts in case player prefers only this hud
-	if stplyr.ai
-	and player == stplyr.ai.leader then
-		if stplyr.ai.playernosight then
+	local bot = (stplyr.ai and stplyr.ai.leader == player) and stplyr
+		or (player.ai and player.ai.realleader == stplyr) and player
+		or nil
+	if bot then
+		if bot.ai.playernosight then
 			hudtext[i + 2] = "\x87" .. string.sub($, 2)
 		end
-		if stplyr.ai.cmd_time > 0
-		and stplyr.ai.cmd_time < 3 * TICRATE then
-			hudtext[i + 3] = "\x81" + "AI control in " .. stplyr.ai.cmd_time / TICRATE + 1 .. "..."
-		elseif stplyr.ai.doteleport then
-			hudtext[i + 3] = "\x84Teleporting..."
+		if bot.ai.cmd_time > 0
+		and bot.ai.cmd_time < 3 * TICRATE then
+			hudtext[i + 3] = "\x81" .. "AI ctl: " .. bot.ai.cmd_time / TICRATE + 1 .. ".."
+		elseif bot.ai.doteleport then
+			hudtext[i + 3] = "\x84Teleport.."
 		end
 	end
+
+	--Return increment
 	return i + 4
 end
 hud.add(function(v, stplyr, cam)
@@ -1282,17 +1286,16 @@ hud.add(function(v, stplyr, cam)
 		--Draw rest of players
 		local hudmax = CV_CDHudMaxPlayers.value
 		for player in players.iterate do
-			--Stop after cd_hudmaxplayers
-			if i > hudmax * 4 + 2 then --4 hudtext each + 2 for enemyct
-				break
-			end
-
-			if player != stplyr
+			--Account for cd_hudmaxplayers
+			if i <= hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
+			and player != stplyr
 			and not huddrawn[#player]
 			and player.mo and player.mo.valid --Infers not spectator.. for now
 			and player.mo.health > 0 then
 				i = BuildHudFor(v, stplyr, cam, player, i)
 			end
+
+			--But still clear huddrawn either way
 			huddrawn[#player] = false
 		end
 	end
@@ -1353,7 +1356,7 @@ hud.add(function(v, stplyr, cam)
 
 				--Wrap to another column if needed
 				if (k + 2) % (68 / scale) == 0 then --17 players * 4 hudtext each
-					x = $ + 64 * scale
+					x = $ + 80 * scale
 					y = $ - 160 * scale --Honor splitscreen etc.
 				end
 			end
@@ -1372,7 +1375,7 @@ end, "game")
 ]]
 local function BotHelp(player)
 	print(
-		"\x87 Coop or Die! v1.1: 2021-06-11",
+		"\x87 Coop or Die! v1.2: 2026-xx-xx",
 		"",
 		"\x87 MP Server Admin:",
 		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
