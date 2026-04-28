@@ -33,6 +33,7 @@ Use `cdhelp` to display this section in-game at any time.
 **MP Client:**
 * `cd_showhud` - Draw CoopOrDie info to HUD?
 * `cd_hudmaxplayers` - Maximum # of players to draw on HUD
+* `cd_hudsorttime` - Interval to sort HUD by distance *(-1 = no sorting)*
 * `pinplayer <player>` - Pin *player* to HUD
 * `unpinplayer <player>` - Unpin *player* from HUD *("all" = all players)*
 * `listplayers` - List active players

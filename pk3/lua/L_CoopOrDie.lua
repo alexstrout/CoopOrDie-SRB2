@@ -79,9 +79,15 @@ local CV_CDShowHud = CV_RegisterVar({
 })
 local CV_CDHudMaxPlayers = CV_RegisterVar({
 	name = "cd_hudmaxplayers",
-	defaultvalue = "8",
+	defaultvalue = "4",
 	flags = 0,
 	PossibleValue = {MIN = 0, MAX = 32}
+})
+local CV_CDHudSortTime = CV_RegisterVar({
+	name = "cd_hudsorttime",
+	defaultvalue = "2",
+	flags = 0,
+	PossibleValue = {MIN = -1, MAX = 10}
 })
 
 
@@ -1273,7 +1279,13 @@ hud.add(function(v, stplyr, cam)
 		end
 
 		--Sort players by dist every so often
-		if leveltime % (3 * TICRATE) == 0 then
+		local hudsorttime = CV_CDHudSortTime.value
+		if hudsorttime < 0 then
+			for player in players.iterate do
+				hudplayersbydist[#player] = player
+			end
+		elseif hudsorttime == 0
+		or leveltime % (hudsorttime * TICRATE) == 0 then
 			--Look for players already in our sorted array
 			for _, player in ipairs(hudplayersbydist) do
 				hudpbdfoundtime[player] = leveltime
@@ -1444,6 +1456,7 @@ local function BotHelp(player)
 		"\x87 MP Client:",
 		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",
 		"\x80  cd_hudmaxplayers - Maximum # of players to draw on HUD",
+		"\x80  cd_hudsorttime - Interval to sort HUD by distance \x86(-1 = no sorting)",
 		"\x80  pinplayer <player> - Pin <player> to HUD",
 		"\x80  unpinplayer <player> - Unpin <player> from HUD \x86(\"all\" = all players)",
 		"\x80  listplayers - List active players"
