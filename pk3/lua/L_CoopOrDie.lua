@@ -316,13 +316,9 @@ local function ListPlayers(player)
 	local count = 0
 	for p in players.iterate do
 		local msg = " " .. #p .. " - " .. p.name
-		if player.cd_pinnedplayers then
-			for _, pin in pairs(player.cd_pinnedplayers) do
-				if pin == p then
-					msg = $ .. " \x81(pinned)"
-					break
-				end
-			end
+		if player.cd_pinnedplayers
+		and player.cd_pinnedplayers[p] then
+			msg = $ .. " \x81(pinned)"
 		end
 		if p == player then
 			msg = $ .. " \x8A(you)"
@@ -752,6 +748,11 @@ addHook("PreThinkFrame", function()
 	for player in players.iterate do
 		PreThinkFrameFor(player)
 	end
+
+	--Process mobjthinkers
+	--Note: pairs is typically not netsafe, as it iterates in an arbitrary order
+	--See https://wiki.srb2.org/wiki/Lua/Functions#Base_Lua_functions
+	--However, it's OK here as long as mobjthinkers don't care which order they execute in
 	for k_mobj, v_func in pairs(mobjthinkers) do
 		if k_mobj.valid then
 			mobjthinkerfunc[v_func](k_mobj)
