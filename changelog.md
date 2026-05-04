@@ -1,3 +1,12 @@
+v1.2 (2026-xx-xx):
+------------------
+* Fix potential desync issue w/ team revivequeue
+* Fix teamlives persisting across sessions
+* Initialize properly if loaded mid-level
+* Improve coop HUD issues, sorting by distance w/ default 4p max
+* Add cd_hudsorttime for HUD sort interval
+* Code cleanup!
+
 v1.1 (2021-06-11):
 ------------------
 * Fix potentially getting stuck in a "warp loop" on custom level exit triggers

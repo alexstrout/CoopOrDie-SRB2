@@ -402,7 +402,7 @@ COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 		for k, v in ipairs(revivequeue) do
 			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. v.name)
 		end
-		CONS_Printf(player, "-- playersbydist --")
+		CONS_Printf(player, "-- hudplayersbydist --")
 		for k, v in ipairs(hudplayersbydist) do
 			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. huddist[v]
 				.. " " .. tostring(v.valid and v.name))
@@ -1482,11 +1482,11 @@ COM_AddCommand("CDHELP", BotHelp, COM_LOCAL)
 BotHelp() --Display help
 
 if gamestate == GS_LEVEL then
-	HandleMapChange(-1)
+	HandleMapChange(gamemap)
 	for mobj in mobjs.iterate() do
 		HandleMobjSpawn(mobj)
 	end
-	HandleMapLoad(-1)
+	HandleMapLoad(gamemap)
 	for player in players.iterate do
 		HandlePlayerSpawn(player)
 	end
