@@ -1416,15 +1416,6 @@ hud.add(function(v, stplyr, cam)
 		y = $ + 32
 	end
 
-	--Account for splitscreen
-	--Avoiding V_PERPLAYER as text gets a bit too squashed
-	if splitscreen then
-		y = $ / 2
-		if #stplyr > 0 then
-			y = $ + 108 --Magic!
-		end
-	end
-
 	--Small fonts become illegible at low res
 	if v.height() < 400 then
 		size = nil
@@ -1438,19 +1429,19 @@ hud.add(function(v, stplyr, cam)
 		if k & 1 then
 			if k == 1 then --Enemy goal % (e.g. "26% +1x")
 				v.drawString(320 - x - 30 * scale, y, s,
-					V_SNAPTOTOP | V_SNAPTORIGHT | V_ALLOWLOWERCASE | v.localTransFlag(), size)
+					V_SNAPTOTOP | V_SNAPTORIGHT | V_PERPLAYER | V_ALLOWLOWERCASE | v.localTransFlag(), size)
 			else
 				v.drawString(320 - x - 30 * scale, y, s,
-					V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size)
+					V_SNAPTOTOP | V_SNAPTORIGHT | V_PERPLAYER | v.localTransFlag(), size)
 			end
 		else
 			if k > 2 and (k + 2) % 4 == 0 --Direction indicator
 			and string.len(s) < 4 then --Displaying a direction
 				v.drawString(320 - x - 34 * scale, y, s,
-					V_SNAPTOTOP | V_SNAPTORIGHT | V_MONOSPACE | V_ALLOWLOWERCASE | v.localTransFlag(), size_r)
+					V_SNAPTOTOP | V_SNAPTORIGHT | V_PERPLAYER | V_MONOSPACE | V_ALLOWLOWERCASE | v.localTransFlag(), size_r)
 			else
 				v.drawString(320 - x - 34 * scale, y, s,
-					V_SNAPTOTOP | V_SNAPTORIGHT | v.localTransFlag(), size_r)
+					V_SNAPTOTOP | V_SNAPTORIGHT | V_PERPLAYER | v.localTransFlag(), size_r)
 			end
 			y = $ + 4 * scale
 
@@ -1461,7 +1452,7 @@ hud.add(function(v, stplyr, cam)
 				--Wrap to another column if needed
 				if (k + 2) % (68 / scale) == 0 then --17 players * 4 hudtext each
 					x = $ + 80 * scale
-					y = $ - 160 * scale --Honor splitscreen etc.
+					y = $ - 160 * scale --Honor prior adjustments (special stage etc.)
 				end
 			end
 		end
