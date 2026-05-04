@@ -187,12 +187,7 @@ mobjinfo[MT_HIVEELEMENTAL].cd_aipriority = true
 local hudtext = {}
 
 --Various HUD hook helpers
-local huddrawntime = {}
-local hudpbdfoundtime = {}
-local huddist = {}
-
---Players by distance (refreshed on interval by HUD hook)
-local hudplayersbydist = {}
+local hudinfo = {}
 
 --Resolve player by number (string or int)
 local function ResolvePlayerByNum(num)
@@ -391,22 +386,39 @@ end
 COM_AddCommand("UNPINPLAYER", UnpinPlayer, 0)
 
 --Debug command for printing out CDInfo objects
+local function DumpNestedTable(player, t, level, pt)
+	local function ResolveName(v)
+		local ret = tostring(v)
+		if type(v) == "userdata" and v.valid and v.name then
+			ret = $ .. "\x8C (" .. tostring(v.name) .. ")\x80"
+		end
+		return ret
+	end
+
+	pt[t] = true
+	for k, v in pairs(t) do
+		local msg = ResolveName(k) .. " = " .. ResolveName(v)
+		for i = 0, level do
+			msg = " " .. $
+		end
+		CONS_Printf(player, msg)
+		if type(v) == "table" and not pt[v] then
+			DumpNestedTable(player, v, level + 1, pt)
+		end
+	end
+end
 COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
+	if string.lower(tostring(bot)) == "hud" then
+		CONS_Printf(player, "-- hudinfo --")
+		DumpNestedTable(player, hudinfo, 0, {})
+		return
+	end
 	bot = ResolvePlayerByNum(bot)
 	if not (bot and bot.valid and bot.cdinfo) then
 		CONS_Printf(player, "-- mobjthinkers --")
-		for k, v in pairs(mobjthinkers) do
-			CONS_Printf(player, tostring(k) .. " = " .. v)
-		end
+		DumpNestedTable(player, mobjthinkers, 0, {})
 		CONS_Printf(player, "-- revivequeue --")
-		for k, v in ipairs(revivequeue) do
-			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. v.name)
-		end
-		CONS_Printf(player, "-- hudplayersbydist --")
-		for k, v in ipairs(hudplayersbydist) do
-			CONS_Printf(player, k .. " = " .. tostring(v) .. " " .. huddist[v]
-				.. " " .. tostring(v.valid and v.name))
-		end
+		DumpNestedTable(player, revivequeue, 0, {})
 		return
 	end
 	CONS_Printf(player, "-- cdinfo " .. bot.name .. " --")
@@ -1123,16 +1135,37 @@ local function HandlePlayerSpawn(player)
 end
 addHook("PlayerSpawn", HandlePlayerSpawn)
 
+--Handle joining players
+addHook("PlayerJoin", function(playernum)
+	--Set up per-player HUD tables (for splitscreen)
+	hudinfo[playernum] = {
+		drawntime = {},
+		pbdfoundtime = {},
+		dist = {},
+		playersbydist = {}
+	}
+end)
+
 --Handle sudden quitting for players
 addHook("PlayerQuit", function(player, reason)
 	if player.cdinfo then
 		DestroyCDInfo(player)
+	end
+
+	--Clean up HUD tables
+	hudinfo[#player] = nil
+	for _, pinfo in pairs(hudinfo) do
+		pinfo.drawntime[player] = nil
+		pinfo.pbdfoundtime[player] = nil
+		pinfo.dist[player] = nil
+		--playersbydist cleaned up when drawn
 	end
 end)
 
 --HUD hook!
 local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	--Already drawn this tic?
+	local huddrawntime = hudinfo[#stplyr].drawntime
 	if huddrawntime[player] == leveltime then
 		return i
 	end
@@ -1278,6 +1311,12 @@ hud.add(function(v, stplyr, cam)
 			hudtext[1] = ""
 			hudtext[2] = ""
 		end
+
+		--Resolve per-player hudinfo tables
+		local pinfo = hudinfo[#stplyr]
+		local hudpbdfoundtime = pinfo.pbdfoundtime
+		local huddist = pinfo.dist
+		local hudplayersbydist = pinfo.playersbydist
 
 		--Sort players by dist every so often
 		local hudsorttime = CV_CDHudSortTime.value
