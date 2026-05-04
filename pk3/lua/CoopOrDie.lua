@@ -306,34 +306,66 @@ local function DestroyCDInfo(player)
 	collectgarbage()
 end
 
+--CONS_Printf but substituting consoleplayer for secondarydisplayplayer
+local function ConsPrint(player, ...)
+	if player == secondarydisplayplayer then
+		player = consoleplayer
+	end
+	CONS_Printf(player, ...)
+end
+
 --List all players, possible including pins only
 local function ListPlayers(player)
 	local count = 0
 	for p in players.iterate do
 		local msg = " " .. #p .. " - " .. p.name
-		if player.cd_pinnedplayers
-		and player.cd_pinnedplayers[p] then
-			msg = $ .. " \x81(pinned)"
+
+		--Use different formatting for splitscreen
+		if splitscreen then
+			if p == consoleplayer then
+				msg = $ .. " \x88(1p)"
+			elseif p == secondarydisplayplayer then
+				msg = $ .. " \x8E(2p)"
+			end
+
+			if consoleplayer
+			and consoleplayer.valid
+			and consoleplayer.cd_pinnedplayers
+			and consoleplayer.cd_pinnedplayers[p] then
+				msg = $ .. " \x84(1p pinned)"
+			end
+			if secondarydisplayplayer
+			and secondarydisplayplayer.valid
+			and secondarydisplayplayer.cd_pinnedplayers
+			and secondarydisplayplayer.cd_pinnedplayers[p] then
+				msg = $ .. " \x85(2p pinned)"
+			end
+		else
+			if p == player then
+				msg = $ .. " \x8A(you)"
+			end
+
+			if player.cd_pinnedplayers
+			and player.cd_pinnedplayers[p] then
+				msg = $ .. " \x81(pinned)"
+			end
 		end
-		if p == player then
-			msg = $ .. " \x8A(you)"
-		end
-		CONS_Printf(player, msg)
+		ConsPrint(player, msg)
 		count = $ + 1
 	end
-	CONS_Printf(player, "Returned " .. count .. " nodes")
+	ConsPrint(player, "Returned " .. count .. " nodes")
 end
 COM_AddCommand("LISTPLAYERS", ListPlayers, COM_LOCAL)
 
 --Pin a particular player to the coop hud
 local function PinPlayer(player, pin)
 	--Make sure we're valid / won't end up pinning ourself
-	local pin = ResolvePlayerByNum(pin)
+	pin = ResolvePlayerByNum($)
 	if not (pin and pin.valid) or pin == player then
 		if pin == player then
-			CONS_Printf(player, "You can't pin yourself! Please try a different player:")
+			ConsPrint(player, "You can't pin yourself! Please try a different player:")
 		else
-			CONS_Printf(player, "Invalid player! Please specify a player by number:")
+			ConsPrint(player, "Invalid player! Please specify a player by number:")
 		end
 		ListPlayers(player)
 		return
@@ -341,36 +373,36 @@ local function PinPlayer(player, pin)
 
 	--Pin that player!
 	if RegisterPinnedPlayer(player, pin) then
-		CONS_Printf(player, "Pinning " .. pin.name)
+		ConsPrint(player, "Pinning " .. pin.name)
 	else
-		CONS_Printf(player, "Already pinned " .. pin.name .. "!")
+		ConsPrint(player, "Already pinned " .. pin.name .. "!")
 	end
 end
+COM_AddCommand("PINPLAYER2", PinPlayer, COM_SPLITSCREEN)
 COM_AddCommand("PINPLAYER", PinPlayer, 0)
 
 --Unpin a particular player from the coop hud
 local function UnpinPlayer(player, pin)
 	--Make sure we have pins!
 	if not player.cd_pinnedplayers then
-		CONS_Printf(player, "You don't have any pinned players!")
+		ConsPrint(player, "You don't have any pinned players!")
 		return
 	end
 
 	--Support "all" argument
-	if pin != nil
-	and string.lower(pin) == "all"
+	if pin != nil and string.lower(pin) == "all"
 	and UnregisterAllPinnedPlayers(player) then
-		CONS_Printf(player, "Unpinning all players")
+		ConsPrint(player, "Unpinning all players")
 		return
 	end
 
 	--Make sure we're valid / won't end up unpinning ourself
-	local pin = ResolvePlayerByNum(pin)
+	pin = ResolvePlayerByNum($)
 	if not (pin and pin.valid) or pin == player then
 		if pin == player then
-			CONS_Printf(player, "You can't unpin yourself! Please try a different player:")
+			ConsPrint(player, "You can't unpin yourself! Please try a different player:")
 		else
-			CONS_Printf(player, "Invalid player! Please specify a player by number:")
+			ConsPrint(player, "Invalid player! Please specify a player by number:")
 		end
 		ListPlayers(player)
 		return
@@ -378,11 +410,12 @@ local function UnpinPlayer(player, pin)
 
 	--Unpin that player!
 	if UnregisterPinnedPlayer(player, pin) then
-		CONS_Printf(player, "Unpinning " .. pin.name)
+		ConsPrint(player, "Unpinning " .. pin.name)
 	else
-		CONS_Printf(player, "Already unpinned " .. pin.name .. "!")
+		ConsPrint(player, "Already unpinned " .. pin.name .. "!")
 	end
 end
+COM_AddCommand("UNPINPLAYER2", UnpinPlayer, COM_SPLITSCREEN)
 COM_AddCommand("UNPINPLAYER", UnpinPlayer, 0)
 
 --Debug command for printing out CDInfo objects
@@ -401,7 +434,7 @@ local function DumpNestedTable(player, t, level, pt)
 		for i = 0, level do
 			msg = " " .. $
 		end
-		CONS_Printf(player, msg)
+		ConsPrint(player, msg)
 		if type(v) == "table" and not pt[v] then
 			DumpNestedTable(player, v, level + 1, pt)
 		end
@@ -409,21 +442,21 @@ local function DumpNestedTable(player, t, level, pt)
 end
 COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 	if string.lower(tostring(bot)) == "hud" then
-		CONS_Printf(player, "-- hudinfo --")
+		ConsPrint(player, "-- hudinfo --")
 		DumpNestedTable(player, hudinfo, 0, {})
 		return
 	end
 	bot = ResolvePlayerByNum(bot)
 	if not (bot and bot.valid and bot.cdinfo) then
-		CONS_Printf(player, "-- mobjthinkers --")
+		ConsPrint(player, "-- mobjthinkers --")
 		DumpNestedTable(player, mobjthinkers, 0, {})
-		CONS_Printf(player, "-- revivequeue --")
+		ConsPrint(player, "-- revivequeue --")
 		DumpNestedTable(player, revivequeue, 0, {})
 		return
 	end
-	CONS_Printf(player, "-- cdinfo " .. bot.name .. " --")
+	ConsPrint(player, "-- cdinfo " .. bot.name .. " --")
 	for k, v in pairs(bot.cdinfo) do
-		CONS_Printf(player, k .. " = " .. tostring(v))
+		ConsPrint(player, k .. " = " .. tostring(v))
 	end
 end, COM_LOCAL)
 
