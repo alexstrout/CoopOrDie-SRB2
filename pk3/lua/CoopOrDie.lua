@@ -249,7 +249,7 @@ local function UnregisterPinnedPlayer(player, pin)
 		return false
 	end
 	player.cd_pinnedplayers[pin] = nil
-	if #player.cd_pinnedplayers < 1 then
+	if not next(player.cd_pinnedplayers) then
 		player.cd_pinnedplayers = nil
 	end
 	return true
