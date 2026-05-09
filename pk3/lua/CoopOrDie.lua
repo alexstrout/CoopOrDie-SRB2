@@ -1165,19 +1165,19 @@ local function HandlePlayerSpawn(player)
 	if leveltime == levelstarttime then
 		teamlives = max($, player.lives)
 	end
+
+	--Set up per-player HUD tables (for splitscreen)
+	--PlayerJoin would be great, but it doesn't fire for bots!
+	if not hudinfo[#player] then
+		hudinfo[#player] = {
+			drawntime = {},
+			pbdfoundtime = {},
+			dist = {},
+			playersbydist = {}
+		}
+	end
 end
 addHook("PlayerSpawn", HandlePlayerSpawn)
-
---Handle joining players
-addHook("PlayerJoin", function(playernum)
-	--Set up per-player HUD tables (for splitscreen)
-	hudinfo[playernum] = {
-		drawntime = {},
-		pbdfoundtime = {},
-		dist = {},
-		playersbydist = {}
-	}
-end)
 
 --Handle sudden quitting for players
 addHook("PlayerQuit", function(player, reason)
