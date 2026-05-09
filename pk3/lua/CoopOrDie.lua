@@ -189,14 +189,25 @@ local hudtext = {}
 --Various HUD hook helpers
 local hudinfo = {}
 
---Resolve player by number (string or int)
-local function ResolvePlayerByNum(num)
-	if type(num) != "number" then
-		num = tonumber(num)
-	end
+--Resolve player by name or number (string or int)
+local function ResolvePlayer(bot)
+	--Try num first
+	local num = tonumber(bot)
 	if num != nil and num >= 0 and num < 32 then
 		return players[num]
 	end
+
+	--Try name
+	if type(bot) == "string" then --Double-check before using string lib
+		bot = string.lower($)
+		for pbot in players.iterate do
+			if string.lower(string.sub(pbot.name, 1, string.len(bot))) == bot then
+				return pbot
+			end
+		end
+	end
+
+	--Merp, none here!
 	return nil
 end
 
@@ -360,7 +371,7 @@ COM_AddCommand("LISTPLAYERS", ListPlayers, COM_LOCAL)
 --Pin a particular player to the coop hud
 local function PinPlayer(player, pin)
 	--Make sure we're valid / won't end up pinning ourself
-	pin = ResolvePlayerByNum($)
+	pin = ResolvePlayer($)
 	if not (pin and pin.valid) or pin == player then
 		if pin == player then
 			ConsPrint(player, "You can't pin yourself! Please try a different player:")
@@ -397,7 +408,7 @@ local function UnpinPlayer(player, pin)
 	end
 
 	--Make sure we're valid / won't end up unpinning ourself
-	pin = ResolvePlayerByNum($)
+	pin = ResolvePlayer($)
 	if not (pin and pin.valid) or pin == player then
 		if pin == player then
 			ConsPrint(player, "You can't unpin yourself! Please try a different player:")
@@ -446,7 +457,7 @@ COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 		DumpNestedTable(player, hudinfo, 0, {})
 		return
 	end
-	bot = ResolvePlayerByNum(bot)
+	bot = ResolvePlayer(bot)
 	if not (bot and bot.valid and bot.cdinfo) then
 		ConsPrint(player, "-- mobjthinkers --")
 		DumpNestedTable(player, mobjthinkers, 0, {})

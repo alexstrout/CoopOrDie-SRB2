@@ -6,6 +6,7 @@ v1.2 (2026-xx-xx):
 * Improve coop HUD issues, sorting by distance w/ default 4p max
 * Add cd_hudsorttime for HUD sort interval
 * Add pinplayer2 / unpinplayer2 for splitscreen use
+* Allow partial names for pinplayer etc. instead of only numbers
 * Code cleanup!
 
 v1.1 (2021-06-11):
