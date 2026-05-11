@@ -959,7 +959,9 @@ local function HandleMapLoad(mapnum)
 		if CV_CDDMFlags.value & 4 then
 			local count = 0
 			for player in players.iterate do
-				count = $ + 1
+				if not (player.spectator or player.outofcoop) then
+					count = $ + 1
+				end
 			end
 			for player in players.iterate do
 				player.nightstime = max($ * 3 / max(count, 3), 60 * TICRATE)
