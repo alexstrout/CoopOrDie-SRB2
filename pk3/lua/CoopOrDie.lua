@@ -886,6 +886,11 @@ local function HandleMapChange(mapnum)
 		end
 	end
 
+	--Clean up HUD tables
+	for i = 0, #players, 1 do
+		hudinfo[i] = nil
+	end
+
 	--Reset level times
 	levelstarttime = 0
 	lastleveltime = 0
@@ -1176,17 +1181,6 @@ local function HandlePlayerSpawn(player)
 	if leveltime == levelstarttime then
 		teamlives = max($, player.lives)
 	end
-
-	--Set up per-player HUD tables (for splitscreen)
-	--PlayerJoin would be great, but it doesn't fire for bots!
-	if not hudinfo[#player] then
-		hudinfo[#player] = {
-			drawntime = {},
-			pbdfoundtime = {},
-			dist = {},
-			playersbydist = {}
-		}
-	end
 end
 addHook("PlayerSpawn", HandlePlayerSpawn)
 
@@ -1210,10 +1204,10 @@ end)
 local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	--Already drawn this tic?
 	local huddrawntime = hudinfo[#stplyr].drawntime
-	if huddrawntime[player] == leveltime then
+	if huddrawntime[player] == stplyr.jointime then
 		return i
 	end
-	huddrawntime[player] = leveltime
+	huddrawntime[player] = stplyr.jointime
 
 	--Ring / time hud!
 	local rcolor = "\x82"
@@ -1358,6 +1352,15 @@ hud.add(function(v, stplyr, cam)
 
 		--Resolve per-player hudinfo tables
 		local pinfo = hudinfo[#stplyr]
+		if not pinfo then
+			pinfo = {
+				drawntime = {},
+				pbdfoundtime = {},
+				dist = {},
+				playersbydist = {}
+			}
+			hudinfo[#stplyr] = pinfo
+		end
 		local hudpbdfoundtime = pinfo.pbdfoundtime
 		local huddist = pinfo.dist
 		local hudplayersbydist = pinfo.playersbydist
@@ -1365,9 +1368,12 @@ hud.add(function(v, stplyr, cam)
 		--Sort players by dist every so often
 		local hudsorttime = CV_CDHudSortTime.value
 		if hudsorttime < 0 then
+			local i = 1
 			for player in players.iterate do
-				hudplayersbydist[#player] = player
+				hudplayersbydist[i] = player
+				i = $ + 1
 			end
+			hudplayersbydist[i] = nil
 		elseif hudsorttime == 0
 		or leveltime % (hudsorttime * TICRATE) == 0 then
 			--Look for players already in our sorted array
