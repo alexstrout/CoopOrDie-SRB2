@@ -1207,6 +1207,20 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	end
 	huddrawntime[player] = stplyr.jointime
 
+	--Only draw one player / bot per bot group! Unless pinned
+	local leader = (player.ai and (player.ai.realleader or player.ai.leader))
+		or player.botleader --Lua's wild! (evaluates bool-ish but returns value!)
+	if leader and leader.valid then
+		if huddrawntime[leader] == stplyr.jointime
+		and not (stplyr.cd_pinnedplayers and stplyr.cd_pinnedplayers[player]) then
+			return i
+		end
+		huddrawntime[leader] = stplyr.jointime
+	else
+		--Inspect us for bot count
+		leader = player
+	end
+
 	--Ring / time hud!
 	local rcolor = "\x82"
 	if player.nightstime then
@@ -1230,6 +1244,12 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	end
 	if namecolor then
 		hudtext[i + 1] = namecolor .. $
+	end
+
+	--Draw bot count i/a (foxBot only, tricky to tally vanilla bots here)
+	if leader and leader.valid
+	and leader.ai_followers and #leader.ai_followers > 1 then
+		hudtext[i + 1] = $ .. "\x84 +" .. #leader.ai_followers - 1
 	end
 
 	--Spectating or dead? (will only display if AI leader or pinned)
