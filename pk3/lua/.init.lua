@@ -8,15 +8,11 @@
 ---CoopOrDie currently pinned players
 ---@field cd_pinnedplayers table
 
-
-
 ---@class mobj_t
 ---CoopOrDie enemy "active" for damage hooks etc.
 ---@field cd_active boolean
 ---CoopOrDie last attacker
 ---@field cd_lastattacker table
-
-
 
 ---@class mobjinfo_t
 ---CoopOrDie enemies ineligible for enemyct / targetenemyct

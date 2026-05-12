@@ -457,17 +457,21 @@ COM_AddCommand("DEBUG_CDINFODUMP", function(player, bot)
 		DumpNestedTable(player, hudinfo, 0, {})
 		return
 	end
-	bot = ResolvePlayer(bot)
-	if not (bot and bot.valid and bot.cdinfo) then
+	bot = ResolvePlayer($)
+	if not (bot and bot.valid) then
 		ConsPrint(player, "-- mobjthinkers --")
 		DumpNestedTable(player, mobjthinkers, 0, {})
 		ConsPrint(player, "-- revivequeue --")
 		DumpNestedTable(player, revivequeue, 0, {})
 		return
 	end
-	ConsPrint(player, "-- cdinfo " .. bot.name .. " --")
-	for k, v in pairs(bot.cdinfo) do
-		ConsPrint(player, k .. " = " .. tostring(v))
+	if bot.cdinfo then
+		ConsPrint(player, "-- cdinfo " .. bot.name .. " --")
+		DumpNestedTable(player, bot.cdinfo, 0, {})
+	end
+	if bot.cd_pinnedplayers then
+		ConsPrint(player, "-- cd_pinnedplayers " .. bot.name .. " --")
+		DumpNestedTable(player, bot.cd_pinnedplayers, 0, {})
 	end
 end, COM_LOCAL)
 
@@ -887,9 +891,7 @@ local function HandleMapChange(mapnum)
 	end
 
 	--Clean up HUD tables
-	for i = 0, #players, 1 do
-		hudinfo[i] = nil
-	end
+	hudinfo = {}
 
 	--Reset level times
 	levelstarttime = 0
@@ -1194,12 +1196,6 @@ addHook("PlayerQuit", function(player, reason)
 
 	--Clean up HUD tables
 	hudinfo[#player] = nil
-	for _, pinfo in pairs(hudinfo) do
-		pinfo.drawntime[player] = nil
-		pinfo.pbdfoundtime[player] = nil
-		pinfo.dist[player] = nil
-		--playersbydist cleaned up when drawn
-	end
 end)
 
 --HUD hook!
@@ -1302,8 +1298,7 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 
 	--Keep simple foxBot concepts in case player prefers only this hud
 	local bot = (stplyr.ai and stplyr.ai.leader == player) and stplyr
-		or (player.ai and player.ai.realleader == stplyr) and player
-		or nil
+		or (player.ai and player.ai.realleader == stplyr) and player or nil
 	if bot then
 		if bot.ai.playernosight then
 			hudtext[i + 2] = "\x87" .. string.sub($, 2)
@@ -1328,21 +1323,20 @@ hud.add(function(v, stplyr, cam)
 		end
 
 		--Otherwise generate a simple coop hud
-		local i = 100
 		if targetenemyct > 0 then
-			i = enemyct * 100 / targetenemyct
-			hudtext[1] = i .. "%"
+			local ct = enemyct * 100 / targetenemyct
+			hudtext[1] = ct .. "%"
 			hudtext[2] = "Enemy Goal:"
 			if pendingenemyct then
 				hudtext[1] = $ .. " \x83+" .. pendingenemyct .. "x"
 			end
-			if i < 25 then
+			if ct < 25 then
 				hudtext[1] = "\x85" .. $
-			elseif i < 50 then
+			elseif ct < 50 then
 				hudtext[1] = "\x84" .. $
-			elseif i < 75 then
+			elseif ct < 75 then
 				hudtext[1] = "\x81" .. $
-			elseif i < 100 then
+			elseif ct < 100 then
 				hudtext[1] = "\x8A" .. $
 			else
 				hudtext[1] = "\x83" .. "DONE!"
@@ -1353,87 +1347,79 @@ hud.add(function(v, stplyr, cam)
 		end
 
 		--Resolve per-player hudinfo tables
-		local pinfo = hudinfo[#stplyr]
-		if not pinfo then
-			pinfo = {
+		local phudinfo = hudinfo[#stplyr]
+		if not phudinfo then
+			phudinfo = {
 				drawntime = {},
-				pbdfoundtime = {},
 				dist = {},
 				playersbydist = {}
 			}
-			hudinfo[#stplyr] = pinfo
+			hudinfo[#stplyr] = phudinfo
 		end
-		local hudpbdfoundtime = pinfo.pbdfoundtime
-		local huddist = pinfo.dist
-		local hudplayersbydist = pinfo.playersbydist
+		local hudplayersbydist = phudinfo.playersbydist
 
 		--Sort players by dist every so often
 		local hudsorttime = CV_CDHudSortTime.value
-		if hudsorttime < 0 then
+		if hudsorttime <= 0
+		or leveltime % (hudsorttime * TICRATE) == 0 then
+			--(Re)pack array
 			local i = 1
 			for player in players.iterate do
 				hudplayersbydist[i] = player
 				i = $ + 1
 			end
-			hudplayersbydist[i] = nil
-		elseif hudsorttime == 0
-		or leveltime % (hudsorttime * TICRATE) == 0 then
-			--Look for players already in our sorted array
-			for _, player in ipairs(hudplayersbydist) do
-				hudpbdfoundtime[player] = leveltime
+			while hudplayersbydist[i] do
+				phudinfo.drawntime[hudplayersbydist[i]] = nil
+				phudinfo.dist[hudplayersbydist[i]] = nil
+				hudplayersbydist[i] = nil
+				i = $ + 1
 			end
 
-			--Grab dists for everyone
-			for player in players.iterate do
-				--Add if not found in sorted array
-				if hudpbdfoundtime[player] != leveltime then
-					table.insert(hudplayersbydist, player)
+			--If sorting...
+			if hudsorttime >= 0 then
+				--Grab dists for everyone
+				local huddist = phudinfo.dist
+				for _, player in ipairs(hudplayersbydist) do
+					local bmo = stplyr.realmo
+					local pmo = player.realmo
+					if bmo and bmo.valid
+					and pmo and pmo.valid
+					and pmo.health > 0 then
+						huddist[player] = FixedHypot(
+							R_PointToDist2(
+								bmo.x, bmo.y,
+								pmo.x, pmo.y
+							) / bmo.scale,
+							(pmo.z - bmo.z) / bmo.scale
+						)
+					else
+						huddist[player] = INT32_MAX
+					end
 				end
 
-				--Work out dist
-				local bmo = stplyr.realmo
-				local pmo = player.realmo
-				if bmo and bmo.valid
-				and pmo and pmo.valid
-				and pmo.health > 0 then
-					huddist[player] = FixedHypot(
-						R_PointToDist2(
-							bmo.x, bmo.y,
-							pmo.x, pmo.y
-						) / bmo.scale,
-						(pmo.z - bmo.z) / bmo.scale
-					)
-				else
-					huddist[player] = INT32_MAX
-				end
+				--And sort!
+				table.sort(hudplayersbydist, function(p1, p2)
+					return huddist[p1] < huddist[p2]
+				end)
 			end
-
-			--And sort!
-			table.sort(hudplayersbydist, function(p1, p2)
-				return huddist[p1] < huddist[p2]
-			end)
 		end
 
-		--Put AI leader up top if using foxBot
-		i = 3
-		if stplyr.ai
-		and stplyr.ai.leader
-		and stplyr.ai.leader.valid then
-			i = BuildHudFor(v, stplyr, cam, stplyr.ai.leader, i, "\x83")
-
-			--And realleader right below if different (e.g. dead)
-			if stplyr.ai.realleader != stplyr.ai.leader
-			and stplyr.ai.realleader
-			and stplyr.ai.realleader.valid then
-				i = BuildHudFor(v, stplyr, cam, stplyr.ai.realleader, i, "\x87")
+		--Put AI leader up top if using foxBot (or vanilla botleader!)
+		local i = 3 --First 2 are enemyct
+		if stplyr.ai then
+			if stplyr.ai.realleader and stplyr.ai.realleader.valid then
+				i = BuildHudFor(v, stplyr, cam, stplyr.ai.realleader, i, "\x83")
+			elseif stplyr.ai.leader and stplyr.ai.leader.valid then --Legacy foxBot? Idk
+				i = BuildHudFor(v, stplyr, cam, stplyr.ai.leader, i, "\x87")
 			end
+		elseif stplyr.botleader and stplyr.botleader.valid then
+			i = BuildHudFor(v, stplyr, cam, stplyr.botleader, i, "\x84")
 		end
 
 		--Put any pinned players after
 		if stplyr.cd_pinnedplayers then
 			for _, player in ipairs(hudplayersbydist) do
-				if player and player.valid
-				and stplyr.cd_pinnedplayers[player] then
+				if stplyr.cd_pinnedplayers[player] and player.valid then
 					i = BuildHudFor(v, stplyr, cam, player, i, "\x81")
 				end
 			end
@@ -1441,17 +1427,14 @@ hud.add(function(v, stplyr, cam)
 
 		--Draw rest of players
 		local hudmax = CV_CDHudMaxPlayers.value
-		for k, player in ipairs(hudplayersbydist) do
-			if player and player.valid then
+		for _, player in ipairs(hudplayersbydist) do
+			if player.valid then
 				--Account for cd_hudmaxplayers
 				if i <= hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
 				and player != stplyr
 				and not player.spectator then
 					i = BuildHudFor(v, stplyr, cam, player, i)
 				end
-			else
-				--Clean up table for next pass
-				table.remove(hudplayersbydist, k)
 			end
 		end
 	end
