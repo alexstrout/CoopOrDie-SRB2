@@ -1199,26 +1199,21 @@ addHook("PlayerQuit", function(player, reason)
 end)
 
 --HUD hook!
-local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
+local function BuildHudFor(stplyr, phudinfo, player, i, namecolor)
 	--Already drawn this tic?
-	local huddrawntime = hudinfo[#stplyr].drawntime
-	if huddrawntime[player] == stplyr.jointime then
+	if phudinfo.drawntime[player] == stplyr.jointime then
 		return i
 	end
-	huddrawntime[player] = stplyr.jointime
+	phudinfo.drawntime[player] = stplyr.jointime
 
-	--Only draw one player / bot per bot group! Unless pinned
-	local leader = (player.ai and (player.ai.realleader or player.ai.leader))
-		or player.botleader --Lua's wild! (evaluates bool-ish but returns value!)
-	if leader and leader.valid then
-		if huddrawntime[leader] == stplyr.jointime
-		and not (stplyr.cd_pinnedplayers and stplyr.cd_pinnedplayers[player]) then
+	--Only draw one player / bot per bot group! Unless pinned etc.
+	local group = phudinfo.groups[player]
+	if group then
+		if group.pluscount and not namecolor then
+			group.pluscount = $ + 1 --Low bits = count
 			return i
 		end
-		huddrawntime[leader] = stplyr.jointime
-	else
-		--Inspect us for bot count
-		leader = player
+		group.pluscount = (i + 1) * 32 --High bits = line #
 	end
 
 	--Ring / time hud!
@@ -1244,12 +1239,6 @@ local function BuildHudFor(v, stplyr, cam, player, i, namecolor)
 	end
 	if namecolor then
 		hudtext[i + 1] = namecolor .. $
-	end
-
-	--Draw bot count i/a (foxBot only, tricky to tally vanilla bots here)
-	if leader and leader.valid
-	and leader.ai_followers and #leader.ai_followers > 1 then
-		hudtext[i + 1] = $ .. "\x84 +" .. #leader.ai_followers - 1
 	end
 
 	--Spectating or dead? (will only display if AI leader or pinned)
@@ -1370,6 +1359,8 @@ hud.add(function(v, stplyr, cam)
 		local phudinfo = hudinfo[#stplyr]
 		if not phudinfo then
 			phudinfo = {
+				groups = {},
+				leadertime = {},
 				drawntime = {},
 				dist = {},
 				playersbydist = {}
@@ -1385,10 +1376,28 @@ hud.add(function(v, stplyr, cam)
 			--(Re)pack array
 			local i = 1
 			for player in players.iterate do
-				hudplayersbydist[i] = player
-				i = $ + 1
+				if player != stplyr then
+					hudplayersbydist[i] = player
+					i = $ + 1
+				end
+
+				--Figure out bot groups! For use later
+				if phudinfo.leadertime[player] != stplyr.jointime then
+					local leader = (player.ai and (player.ai.realleader or player.ai.leader))
+						or player.botleader --Lua's wild! (evaluates bool-ish but returns value)
+					if leader and leader.valid then
+						phudinfo.leadertime[leader] = stplyr.jointime
+						phudinfo.groups[leader] = $ or {}
+						phudinfo.groups[player] = phudinfo.groups[leader]
+					else
+						phudinfo.groups[player] = nil
+					end
+				end
 			end
 			while hudplayersbydist[i] do
+				--Clean up HUD tables
+				phudinfo.groups[hudplayersbydist[i]] = nil
+				phudinfo.leadertime[hudplayersbydist[i]] = nil
 				phudinfo.drawntime[hudplayersbydist[i]] = nil
 				phudinfo.dist[hudplayersbydist[i]] = nil
 				hudplayersbydist[i] = nil
@@ -1428,19 +1437,19 @@ hud.add(function(v, stplyr, cam)
 		local i = 3 --First 2 are enemyct
 		if stplyr.ai then
 			if stplyr.ai.realleader and stplyr.ai.realleader.valid then
-				i = BuildHudFor(v, stplyr, cam, stplyr.ai.realleader, i, "\x83")
+				i = BuildHudFor(stplyr, phudinfo, stplyr.ai.realleader, i, "\x83")
 			elseif stplyr.ai.leader and stplyr.ai.leader.valid then --Legacy foxBot? Idk
-				i = BuildHudFor(v, stplyr, cam, stplyr.ai.leader, i, "\x87")
+				i = BuildHudFor(stplyr, phudinfo, stplyr.ai.leader, i, "\x87")
 			end
 		elseif stplyr.botleader and stplyr.botleader.valid then
-			i = BuildHudFor(v, stplyr, cam, stplyr.botleader, i, "\x84")
+			i = BuildHudFor(stplyr, phudinfo, stplyr.botleader, i, "\x84")
 		end
 
 		--Put any pinned players after
 		if stplyr.cd_pinnedplayers then
 			for _, player in ipairs(hudplayersbydist) do
 				if stplyr.cd_pinnedplayers[player] and player.valid then
-					i = BuildHudFor(v, stplyr, cam, player, i, "\x81")
+					i = BuildHudFor(stplyr, phudinfo, player, i, "\x81")
 				end
 			end
 		end
@@ -1451,10 +1460,19 @@ hud.add(function(v, stplyr, cam)
 			if player.valid then
 				--Account for cd_hudmaxplayers
 				if i <= hudmax * 4 + 2 --4 hudtext each + 2 for enemyct
-				and player != stplyr
 				and not player.spectator then
-					i = BuildHudFor(v, stplyr, cam, player, i)
+					i = BuildHudFor(stplyr, phudinfo, player, i)
 				end
+			end
+		end
+
+		--Append bot group counts i/a
+		for _, group in pairs(phudinfo.groups) do
+			if group.pluscount then
+				if group.pluscount % 32 then
+					hudtext[group.pluscount / 32] = $ .. "\x84 +" .. group.pluscount % 32
+				end
+				group.pluscount = nil
 			end
 		end
 	end
