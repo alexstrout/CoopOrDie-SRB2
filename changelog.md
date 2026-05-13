@@ -6,6 +6,7 @@ v1.2 (2026-xx-xx):
 * Improve coop HUD, sorting by distance and combining bot groups
 * Default `cd_hudmaxplayers` to 4, instead of 8
 * Add `cd_hudsorttime` for HUD sort interval
+* Add `cd_hudgroup` for HUD group squash
 * Add `pinplayer2` / `unpinplayer2` for splitscreen use
 * Allow partial names for `pinplayer` etc. instead of only numbers
 * Code cleanup!

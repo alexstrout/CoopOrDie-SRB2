@@ -89,6 +89,12 @@ local CV_CDHudSortTime = CV_RegisterVar({
 	flags = 0,
 	PossibleValue = {MIN = -1, MAX = 10}
 })
+local CV_CDHudGroup = CV_RegisterVar({
+	name = "cd_hudgroup",
+	defaultvalue = "On",
+	flags = 0,
+	PossibleValue = CV_OnOff
+})
 
 
 
@@ -1306,8 +1312,8 @@ local function BuildHudFor(stplyr, phudinfo, player, i, namecolor)
 	end
 
 	--Keep simple foxBot concepts in case player prefers only this hud
-	local bot = (stplyr.ai and stplyr.ai.leader == player) and stplyr
-		or (player.ai and player.ai.realleader == stplyr) and player or nil
+	local bot = (stplyr.ai and stplyr.ai.leader == player and stplyr)
+		or (player.ai and player.ai.realleader == stplyr and player)
 	if bot then
 		if bot.ai.playernosight then
 			hudtext[i + 2] = "\x87" .. string.sub($, 2)
@@ -1383,8 +1389,10 @@ hud.add(function(v, stplyr, cam)
 
 				--Figure out bot groups! For use later
 				if phudinfo.leadertime[player] != stplyr.jointime then
-					local leader = (player.ai and (player.ai.realleader or player.ai.leader))
-						or player.botleader --Lua's wild! (evaluates bool-ish but returns value)
+					local leader = CV_CDHudGroup.value
+						--Lua's wild! (evaluates bool-ish but returns value)
+						and ((player.ai and (player.ai.realleader or player.ai.leader))
+							or player.botleader)
 					if leader and leader.valid then
 						phudinfo.leadertime[leader] = stplyr.jointime
 						phudinfo.groups[leader] = $ or {}
@@ -1561,6 +1569,7 @@ local function BotHelp(player)
 		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",
 		"\x80  cd_hudmaxplayers - Maximum # of players to draw on HUD",
 		"\x80  cd_hudsorttime - Interval to sort HUD by distance \x86(-1 = no sorting)",
+		"\x80  cd_hudgroup - Squash bot groups together w/ +2 etc. on HUD?",
 		"\x80  pinplayer <player> - Pin <player> to HUD",
 		"\x80  unpinplayer <player> - Unpin <player> from HUD \x86(\"all\" = all players)",
 		"\x80  listplayers - List active players"
