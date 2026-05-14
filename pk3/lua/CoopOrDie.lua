@@ -195,6 +195,13 @@ local hudtext = {}
 --Various HUD hook helpers
 local hudinfo = {}
 
+--Return whether player has elevated privileges
+local function IsAdmin(player)
+	return player == server
+		or (player and player.valid
+			and IsPlayerAdmin(player))
+end
+
 --Resolve player by name or number (string or int)
 local function ResolvePlayer(bot)
 	--Try num first
@@ -1549,36 +1556,39 @@ end, "game")
 	Things that may or may not be helpful
 	--------------------------------------------------------------------------------
 ]]
-local function BotHelp(player)
-	print(
-		"\x87 Coop or Die! v1.2: 2026-xx-xx",
-		"",
-		"\x87 MP Server Admin:",
-		"\x80  cd_enemyclearpct - Required % of enemies for level completion",
-		"\x80  cd_enemyclearmax - Maximum # of enemies for level completion",
-		"\x80  cd_dmflags - Difficulty modifier flags",
-		"\x86   (1 = Enemies require 2+ hits from different players)",
-		"\x86   (2 = Spheres require 2 pickups from different players)",
-		"\x86   (4 = Special Stages restrict time based on player count)",
-		"\x86   (8 = Players reset their tagged enemy hits on death)",
-		"\x83   Note: These options can be combined by adding them together!",
-		"\x80  cd_teamlives - Share team lives using goal-driven revive mechanics?",
-		"\x80  cd_emeraldbonus - Award ring / shield bonuses on spawn w/ all emeralds?",
-		"",
-		"\x87 MP Client:",
-		"\x80  cd_showhud - Draw CoopOrDie info to HUD?",
-		"\x80  cd_hudmaxplayers - Maximum # of players to draw on HUD",
-		"\x80  cd_hudsorttime - Interval to sort HUD by distance \x86(-1 = no sorting)",
-		"\x80  cd_hudgroup - Squash bot groups together w/ +2 etc. on HUD?",
-		"\x80  pinplayer <player> - Pin <player> to HUD",
-		"\x80  unpinplayer <player> - Unpin <player> from HUD \x86(\"all\" = all players)",
-		"\x80  listplayers - List active players"
-	)
+local function BotHelp(player, showall)
+	print("\x87 Coop or Die! v1.2: 2026-xx-xx")
+	if showall
+	or not netgame --Show in menus (if not connected to netgame!)
+	or IsAdmin(player) then
+		print("")
+		print("\x87 SP / MP Server Admin:")
+		print("\x80  cd_enemyclearpct - Required % of enemies for level completion")
+		print("\x80  cd_enemyclearmax - Maximum # of enemies for level completion")
+		print("\x80  cd_dmflags - Difficulty modifier flags")
+		print("\x86   (1 = Enemies require 2+ hits from different players)")
+		print("\x86   (2 = Spheres require 2 pickups from different players)")
+		print("\x86   (4 = Special Stages restrict time based on player count)")
+		print("\x86   (8 = Players reset their tagged enemy hits on death)")
+		print("\x83   Note: These options can be combined by adding them together!")
+		print("\x80  cd_teamlives - Share team lives using goal-driven revive mechanics?")
+		print("\x80  cd_emeraldbonus - Award ring / shield bonuses on spawn w/ all emeralds?")
+	else
+		print("")
+		print("\x83 Use \"cdhelp 1\" to show all commands!")
+	end
+	print("")
+	print("\x87 SP / MP Client:")
+	print("\x80  cd_showhud - Draw CoopOrDie info to HUD?")
+	print("\x80  cd_hudmaxplayers - Maximum # of players to draw on HUD")
+	print("\x80  cd_hudsorttime - Interval to sort HUD by distance \x86(-1 = no sorting)")
+	print("\x80  cd_hudgroup - Squash bot groups together w/ +2 etc. on HUD?")
+	print("\x80  pinplayer <player> - Pin <player> to HUD")
+	print("\x80  unpinplayer <player> - Unpin <player> from HUD \x86(\"all\" = all players)")
+	print("\x80  listplayers - List active players")
 	if not player then
-		print(
-			"",
-			"\x87 Use \"cdhelp\" to show this again!"
-		)
+		print("")
+		print("\x87 Use \"cdhelp\" to show this again!")
 	end
 end
 COM_AddCommand("CDHELP", BotHelp, COM_LOCAL)
