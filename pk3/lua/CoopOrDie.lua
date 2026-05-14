@@ -211,7 +211,7 @@ local function ResolvePlayer(bot)
 	end
 
 	--Try name
-	if type(bot) == "string" then --Double-check before using string lib
+	if type(bot) == "string" and bot != "" then
 		bot = string.lower($)
 		for pbot in players.iterate do
 			if string.lower(string.sub(pbot.name, 1, string.len(bot))) == bot then
@@ -336,6 +336,25 @@ local function ConsPrint(player, ...)
 		player = consoleplayer
 	end
 	CONS_Printf(player, ...)
+end
+
+--Get our "top" leader in a leader chain (if applicable)
+--e.g. for A <- B <- D <- C, D's "top" leader is A
+--Kinda like foxBot, except also accounting for botleader
+local function GetTopLeader(bot, basebot)
+	local i = 0 --And with some extra protection :)
+	while bot != basebot and bot.valid and i < #players do
+		basebot = $ or bot --basebot optional (don't know leader type!)
+		if bot.ai and bot.ai.realleader and bot.ai.realleader.valid then
+			bot = bot.ai.realleader
+		elseif bot.botleader and bot.botleader.valid then
+			bot = bot.botleader
+		else
+			break
+		end
+		i = $ + 1
+	end
+	return bot
 end
 
 --List all players, possible including pins only
@@ -1396,11 +1415,8 @@ hud.add(function(v, stplyr, cam)
 
 				--Figure out bot groups! For use later
 				if phudinfo.leadertime[player] != stplyr.jointime then
-					local leader = CV_CDHudGroup.value
-						--Lua's wild! (evaluates bool-ish but returns value)
-						and ((player.ai and (player.ai.realleader or player.ai.leader))
-							or player.botleader)
-					if leader and leader.valid then
+					local leader = CV_CDHudGroup.value and GetTopLeader(player)
+					if leader and leader != player then --GetTopLeader infers valid
 						phudinfo.leadertime[leader] = stplyr.jointime
 						phudinfo.groups[leader] = $ or {}
 						phudinfo.groups[player] = phudinfo.groups[leader]
