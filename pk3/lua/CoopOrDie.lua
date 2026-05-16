@@ -1100,12 +1100,14 @@ addHook("MobjDamage", function(target, inflictor, source, damage, damagetype)
 					end
 					if target.cd_merpcount <= 0 then
 						--Player or player-like buddy object :)
-						if inflictor.player then
+						if inflictor.player and inflictor.player.valid
+						and not P_PlayerInPain(inflictor.player) then
 							S_StartSound(inflictor, sfx_shldls)
 							P_DoPlayerPain(inflictor.player, target, target)
-						elseif inflictor.info.spawnstate == mobjinfo[MT_PLAYER].spawnstate then
+						elseif inflictor.info.painstate == mobjinfo[MT_PLAYER].painstate
+						and inflictor.state != inflictor.info.painstate then
 							S_StartSound(inflictor, sfx_shldls)
-							inflictor.state = S_PLAY_PAIN
+							inflictor.state = inflictor.info.painstate
 						end
 						target.cd_merpcount = nil
 					end
