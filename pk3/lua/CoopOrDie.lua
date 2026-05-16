@@ -739,9 +739,11 @@ local function PreThinkFrameFor(player)
 		--Revive someone if needed
 		teamlives = max($, 2)
 		return
+	end
+
 	--Reapply finished state if we previously finished level
 	--Note this is cleared on map reset so we don't cheat the time bonus
-	elseif pci.finished
+	if pci.finished
 	and targetenemyct > 0
 	and enemyct >= targetenemyct then
 		P_DoPlayerFinish(player)
@@ -856,8 +858,7 @@ addHook("PreThinkFrame", function()
 	--Handle any pendingenemyct
 	if pendingenemycttime > 0 then
 		pendingenemycttime = $ - 1
-		if pendingenemycttime <= 0
-		or pendingenemyct + enemyct >= targetenemyct then
+		if pendingenemycttime <= 0 then
 			enemyct = $ + pendingenemyct
 			pendingenemyct = 0
 
@@ -1139,7 +1140,10 @@ local function HandleDeath(target, inflictor, source, damagetype)
 
 		--Increment enemy count!
 		pendingenemyct = $ + target.info.spawnhealth
-		pendingenemycttime = TICRATE / 2
+		if pendingenemycttime <= 0
+		or enemyct + pendingenemyct < targetenemyct then
+			pendingenemycttime = TICRATE / 2
+		end
 	end
 end
 addHook("MobjDeath", HandleDeath)
