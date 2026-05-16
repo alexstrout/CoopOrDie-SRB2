@@ -713,12 +713,10 @@ local function PreThinkFrameFor(player)
 
 		--If we're a bot, bump our leader to the top of the queue
 		--This prevents us from continually respawning at the exit
-		if player.ai
-		and player.ai.leader
-		and player.ai.leader.valid
-		and player.ai.leader.spectator then
+		local leader = (player.ai and player.ai.leader) or player.botleader
+		if leader and leader.valid and leader.spectator then
 			for k, v in ipairs(revivequeue) do
-				if v == player.ai.leader then
+				if v == leader then
 					table.remove(revivequeue, k)
 					table.insert(revivequeue, 1, v)
 					break
