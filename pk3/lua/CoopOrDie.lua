@@ -724,6 +724,18 @@ local function PreThinkFrameFor(player)
 			end
 		end
 
+		--Increment enemy count, just in case we just can't find any
+		if pci.finished then
+			local aliveplayers = 0
+			for p in players.iterate do
+				if p.lives > 0 then
+					aliveplayers = $ + 1
+				end
+			end
+			pendingenemyct = $ + max(1, targetenemyct / (5 * max(1, aliveplayers)))
+			pendingenemycttime = TICRATE / 2
+		end
+
 		--Remember that we finished level for later
 		pci.finished = true
 

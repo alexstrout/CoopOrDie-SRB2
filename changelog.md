@@ -10,6 +10,7 @@ v1.2 (2026-xx-xx):
 * Add `pinplayer2` / `unpinplayer2` for splitscreen use
 * Allow partial names for `pinplayer` etc. instead of only numbers
 * Fix getting infinitely juggled by tagged enemies when super or invincible (whoops, lol)
+* Award % of Enemy Goal after warping back to start at least once
 * Code cleanup!
 
 v1.1 (2021-06-11):
