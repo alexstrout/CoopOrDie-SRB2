@@ -661,8 +661,7 @@ local function PreThinkFrameFor(player)
 		)
 		or (
 			--Somehow revived on our own
-			player.mo and player.mo.valid
-			and player.mo.health > 0
+			player.lives > 0
 		)
 	) then
 		pci.needsrevive = false
@@ -687,6 +686,7 @@ local function PreThinkFrameFor(player)
 			teamlives = 1
 		end
 		player.lives = teamlives
+		player.outofcoop = false
 		player.spectator = false
 		player.playerstate = PST_REBORN
 	end
@@ -714,7 +714,7 @@ local function PreThinkFrameFor(player)
 		--If we're a bot, bump our leader to the top of the queue
 		--This prevents us from continually respawning at the exit
 		local leader = (player.ai and player.ai.leader) or player.botleader
-		if leader and leader.valid and leader.spectator then
+		if leader and leader.valid and (leader.spectator or leader.outofcoop) then
 			for k, v in ipairs(revivequeue) do
 				if v == leader then
 					table.remove(revivequeue, k)
