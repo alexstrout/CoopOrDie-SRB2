@@ -44,31 +44,31 @@ local CV_CDDebug = CV_RegisterVar({
 local CV_CDEnemyClearPct = CV_RegisterVar({
 	name = "cd_enemyclearpct",
 	defaultvalue = "40",
-	flags = CV_NETVAR|CV_SHOWMODIF,
+	flags = CV_NETVAR | CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = 100}
 })
 local CV_CDEnemyClearMax = CV_RegisterVar({
 	name = "cd_enemyclearmax",
 	defaultvalue = "75",
-	flags = CV_NETVAR|CV_SHOWMODIF,
+	flags = CV_NETVAR | CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = UINT16_MAX}
 })
 local CV_CDDMFlags = CV_RegisterVar({
 	name = "cd_dmflags",
 	defaultvalue = "7",
-	flags = CV_NETVAR|CV_SHOWMODIF,
+	flags = CV_NETVAR | CV_SHOWMODIF,
 	PossibleValue = {MIN = 0, MAX = 15}
 })
 local CV_CDTeamLives = CV_RegisterVar({
 	name = "cd_teamlives",
 	defaultvalue = "On",
-	flags = CV_NETVAR|CV_SHOWMODIF,
+	flags = CV_NETVAR | CV_SHOWMODIF,
 	PossibleValue = CV_OnOff
 })
 local CV_CDEmeraldBonus = CV_RegisterVar({
 	name = "cd_emeraldbonus",
 	defaultvalue = "On",
-	flags = CV_NETVAR|CV_SHOWMODIF,
+	flags = CV_NETVAR | CV_SHOWMODIF,
 	PossibleValue = CV_OnOff
 })
 local CV_CDShowHud = CV_RegisterVar({
@@ -112,7 +112,7 @@ mobjinfo[MT_FOXCD_SCOREBOP] = {
 	spawnstate = S_INVISIBLE,
 	radius = FRACUNIT,
 	height = FRACUNIT,
-	flags = MF_NOGRAVITY|MF_NOCLIP|MF_NOTHINK|MF_NOCLIPHEIGHT|MF_ENEMY
+	flags = MF_NOGRAVITY | MF_NOCLIP | MF_NOTHINK | MF_NOCLIPHEIGHT | MF_ENEMY
 }
 
 
