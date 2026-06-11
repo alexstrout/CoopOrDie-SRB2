@@ -1280,8 +1280,8 @@ local function BuildHudFor(stplyr, phudinfo, player, i, namecolor)
 		end
 		hudtext[i] = rcolor .. "Rings \x80" .. player.rings
 	end
-	if string.len(player.name) > 11 then
-		hudtext[i + 1] = string.sub(player.name, 0, 10) .. ".."
+	if string.len(player.name) > 9 then
+		hudtext[i + 1] = string.sub(player.name, 1, 8) .. ".."
 	else
 		hudtext[i + 1] = player.name
 	end
@@ -1465,9 +1465,9 @@ hud.add(function(v, stplyr, cam)
 							R_PointToDist2(
 								bmo.x, bmo.y,
 								pmo.x, pmo.y
-							) / bmo.scale,
-							(pmo.z - bmo.z) / bmo.scale
-						)
+							),
+							pmo.z - bmo.z
+						) / bmo.scale
 					else
 						huddist[player] = INT32_MAX
 					end
