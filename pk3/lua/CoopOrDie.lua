@@ -1,5 +1,6 @@
 --[[
 	Coop or Die! v1.2 by fox: https://taraxis.com/CoopOrDie-SRB2
+	Extensively draws code from foxBot, see license-foxBot.txt
 
 	--------------------------------------------------------------------------------
 	Copyright (c) 2026 Alex Strout
@@ -21,10 +22,6 @@
 	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 	SOFTWARE.
-
-	--------------------------------------------------------------------------------
-	Extensively draws code from foxBot, see license-foxBot.txt or:
-	https://github.com/alexstrout/foxBot-SRB2/blob/master/license.txt
 ]]
 
 
