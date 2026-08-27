@@ -1586,7 +1586,7 @@ end, "game")
 	--------------------------------------------------------------------------------
 ]]
 local function BotHelp(player, showall)
-	print("\x87 Coop or Die! v1.2: 2026-xx-xx")
+	print("\x87 Coop or Die! v1.2: 2026-08-27")
 	if showall
 	or not netgame --Show in menus (if not connected to netgame!)
 	or IsAdmin(player) then

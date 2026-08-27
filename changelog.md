@@ -1,4 +1,4 @@
-v1.2 (2026-xx-xx):
+v1.2 (2026-08-27):
 ------------------
 * Fix potential desync issue w/ team revive queue
 * Fix team lives persisting across sessions
